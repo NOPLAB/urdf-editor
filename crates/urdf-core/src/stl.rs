@@ -6,16 +6,64 @@ use std::path::Path;
 
 use crate::part::Part;
 
-/// Load an STL file and create a Part
+/// STL import scale unit
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum StlUnit {
+    /// Meters (no scaling)
+    Meters,
+    /// Millimeters (scale by 0.001)
+    #[default]
+    Millimeters,
+    /// Centimeters (scale by 0.01)
+    Centimeters,
+    /// Inches (scale by 0.0254)
+    Inches,
+}
+
+impl StlUnit {
+    pub fn scale_factor(&self) -> f32 {
+        match self {
+            StlUnit::Meters => 1.0,
+            StlUnit::Millimeters => 0.001,
+            StlUnit::Centimeters => 0.01,
+            StlUnit::Inches => 0.0254,
+        }
+    }
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            StlUnit::Meters => "Meters",
+            StlUnit::Millimeters => "Millimeters",
+            StlUnit::Centimeters => "Centimeters",
+            StlUnit::Inches => "Inches",
+        }
+    }
+
+    pub const ALL: &'static [StlUnit] = &[
+        StlUnit::Meters,
+        StlUnit::Millimeters,
+        StlUnit::Centimeters,
+        StlUnit::Inches,
+    ];
+}
+
+/// Load an STL file and create a Part (no scaling)
 pub fn load_stl(path: impl AsRef<Path>) -> Result<Part, StlError> {
+    load_stl_with_unit(path, StlUnit::Meters)
+}
+
+/// Load an STL file with specified unit
+pub fn load_stl_with_unit(path: impl AsRef<Path>, unit: StlUnit) -> Result<Part, StlError> {
     let path = path.as_ref();
     let file = std::fs::File::open(path).map_err(|e| StlError::Io(e.to_string()))?;
     let mut reader = BufReader::new(file);
 
     let mesh = stl_io::read_stl(&mut reader).map_err(|e| StlError::Parse(e.to_string()))?;
 
-    // Convert to indexed mesh
-    let (vertices, normals, indices) = index_mesh(&mesh);
+    let scale = unit.scale_factor();
+
+    // Convert to indexed mesh with scale
+    let (vertices, normals, indices) = index_mesh_with_scale(&mesh, scale);
 
     let name = path
         .file_stem()
@@ -40,8 +88,8 @@ pub fn load_stl(path: impl AsRef<Path>) -> Result<Part, StlError> {
     Ok(part)
 }
 
-/// Convert triangle soup to indexed mesh
-fn index_mesh(mesh: &stl_io::IndexedMesh) -> (Vec<[f32; 3]>, Vec<[f32; 3]>, Vec<u32>) {
+/// Convert triangle soup to indexed mesh with scale factor
+fn index_mesh_with_scale(mesh: &stl_io::IndexedMesh, scale: f32) -> (Vec<[f32; 3]>, Vec<[f32; 3]>, Vec<u32>) {
     let mut unique_vertices: Vec<[f32; 3]> = Vec::new();
     let mut vertex_map: HashMap<[i32; 3], u32> = HashMap::new();
     let mut indices: Vec<u32> = Vec::new();
@@ -56,9 +104,10 @@ fn index_mesh(mesh: &stl_io::IndexedMesh) -> (Vec<[f32; 3]>, Vec<[f32; 3]>, Vec<
 
         for &vertex_idx in &face.vertices {
             let vertex = mesh.vertices[vertex_idx];
-            let v = [vertex[0], vertex[1], vertex[2]];
+            // Apply scale factor
+            let v = [vertex[0] * scale, vertex[1] * scale, vertex[2] * scale];
 
-            // Quantize for comparison
+            // Quantize for comparison (use scaled precision)
             let key = [
                 (v[0] * PRECISION) as i32,
                 (v[1] * PRECISION) as i32,

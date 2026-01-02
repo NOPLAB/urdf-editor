@@ -2,12 +2,12 @@
 
 use std::sync::Arc;
 
-use glam::Mat4;
+use glam::{Mat4, Vec3};
 use parking_lot::Mutex;
 use uuid::Uuid;
 
 use urdf_core::Part;
-use urdf_renderer::{axis::AxisInstance, marker::MarkerInstance, Renderer};
+use urdf_renderer::{axis::AxisInstance, marker::MarkerInstance, GizmoAxis, Renderer};
 
 /// Render texture for viewport
 struct RenderTexture {
@@ -19,12 +19,25 @@ struct RenderTexture {
     height: u32,
 }
 
+/// Gizmo interaction state
+#[derive(Default)]
+pub struct GizmoInteraction {
+    pub dragging: bool,
+    pub drag_axis: GizmoAxis,
+    pub drag_start_pos: Vec3,
+    pub part_start_transform: Mat4,
+    pub part_id: Option<Uuid>,
+    pub gizmo_position: Vec3,
+    pub gizmo_scale: f32,
+}
+
 /// Viewport rendering state
 pub struct ViewportState {
     pub renderer: Renderer,
     pub device: Arc<wgpu::Device>,
     pub queue: Arc<wgpu::Queue>,
     render_texture: Option<RenderTexture>,
+    pub gizmo: GizmoInteraction,
 }
 
 impl ViewportState {
@@ -40,6 +53,7 @@ impl ViewportState {
             device,
             queue,
             render_texture: None,
+            gizmo: GizmoInteraction::default(),
         }
     }
 
@@ -192,7 +206,165 @@ impl ViewportState {
     pub fn clear_overlays(&mut self) {
         self.renderer.update_axes(&self.queue, &[]);
         self.renderer.update_markers(&self.queue, &[]);
+        self.renderer.hide_gizmo();
     }
+
+    /// Show gizmo for a part
+    pub fn show_gizmo_for_part(&mut self, part: &Part) {
+        // Calculate center from bounding box
+        let center = Vec3::new(
+            (part.bbox_min[0] + part.bbox_max[0]) / 2.0,
+            (part.bbox_min[1] + part.bbox_max[1]) / 2.0,
+            (part.bbox_min[2] + part.bbox_max[2]) / 2.0,
+        );
+        // Transform center by part's origin transform
+        let world_center = part.origin_transform.transform_point3(center);
+
+        // Scale gizmo based on part size
+        let extent = Vec3::new(
+            part.bbox_max[0] - part.bbox_min[0],
+            part.bbox_max[1] - part.bbox_min[1],
+            part.bbox_max[2] - part.bbox_min[2],
+        );
+        let scale = (extent.length() * 0.3).max(0.1);
+
+        // Store gizmo state
+        self.gizmo.gizmo_position = world_center;
+        self.gizmo.gizmo_scale = scale;
+        self.gizmo.part_id = Some(part.id);
+        self.gizmo.part_start_transform = part.origin_transform;
+
+        self.renderer.show_gizmo(&self.queue, world_center, scale);
+    }
+
+    /// Hide gizmo
+    pub fn hide_gizmo(&mut self) {
+        self.renderer.hide_gizmo();
+        self.gizmo.part_id = None;
+    }
+
+    /// Test if a screen position hits the gizmo
+    pub fn gizmo_hit_test(&self, screen_x: f32, screen_y: f32, width: f32, height: f32) -> GizmoAxis {
+        if self.gizmo.part_id.is_none() {
+            return GizmoAxis::None;
+        }
+
+        let (ray_origin, ray_dir) = self.renderer.camera.screen_to_ray(screen_x, screen_y, width, height);
+        self.renderer.gizmo_hit_test(ray_origin, ray_dir, self.gizmo.gizmo_position, self.gizmo.gizmo_scale)
+    }
+
+    /// Start dragging the gizmo
+    pub fn start_gizmo_drag(&mut self, axis: GizmoAxis, screen_x: f32, screen_y: f32, width: f32, height: f32) {
+        if axis == GizmoAxis::None {
+            return;
+        }
+
+        let (ray_origin, ray_dir) = self.renderer.camera.screen_to_ray(screen_x, screen_y, width, height);
+
+        // Calculate intersection point with the axis plane
+        let axis_dir = axis.direction();
+        let plane_normal = self.get_drag_plane_normal(axis);
+
+        if let Some(point) = ray_plane_intersection(ray_origin, ray_dir, self.gizmo.gizmo_position, plane_normal) {
+            self.gizmo.dragging = true;
+            self.gizmo.drag_axis = axis;
+            self.gizmo.drag_start_pos = point;
+            self.renderer.set_gizmo_highlight(&self.queue, axis);
+        }
+    }
+
+    /// Update gizmo drag - returns the translation delta if dragging
+    pub fn update_gizmo_drag(&mut self, screen_x: f32, screen_y: f32, width: f32, height: f32) -> Option<Vec3> {
+        if !self.gizmo.dragging {
+            return None;
+        }
+
+        let (ray_origin, ray_dir) = self.renderer.camera.screen_to_ray(screen_x, screen_y, width, height);
+        let plane_normal = self.get_drag_plane_normal(self.gizmo.drag_axis);
+
+        if let Some(current_point) = ray_plane_intersection(ray_origin, ray_dir, self.gizmo.gizmo_position, plane_normal) {
+            let delta = current_point - self.gizmo.drag_start_pos;
+
+            // Project delta onto the axis
+            let axis_dir = self.gizmo.drag_axis.direction();
+            let projected_delta = axis_dir * delta.dot(axis_dir);
+
+            // Update gizmo position
+            self.gizmo.gizmo_position += projected_delta;
+            self.gizmo.drag_start_pos = current_point;
+
+            // Update gizmo visual
+            self.renderer.show_gizmo(&self.queue, self.gizmo.gizmo_position, self.gizmo.gizmo_scale);
+
+            return Some(projected_delta);
+        }
+
+        None
+    }
+
+    /// End gizmo drag
+    pub fn end_gizmo_drag(&mut self) {
+        self.gizmo.dragging = false;
+        self.gizmo.drag_axis = GizmoAxis::None;
+        self.renderer.set_gizmo_highlight(&self.queue, GizmoAxis::None);
+    }
+
+    /// Get the plane normal for dragging on an axis
+    fn get_drag_plane_normal(&self, axis: GizmoAxis) -> Vec3 {
+        let camera_forward = (self.renderer.camera.target - self.renderer.camera.position).normalize();
+        let axis_dir = axis.direction();
+
+        // Choose a plane that is most perpendicular to the camera view
+        // but contains the axis
+        let up = Vec3::Z;
+        let right = camera_forward.cross(up).normalize();
+
+        match axis {
+            GizmoAxis::X => {
+                // Use plane with normal most perpendicular to X
+                if camera_forward.y.abs() > camera_forward.z.abs() {
+                    Vec3::Y
+                } else {
+                    Vec3::Z
+                }
+            }
+            GizmoAxis::Y => {
+                if camera_forward.x.abs() > camera_forward.z.abs() {
+                    Vec3::X
+                } else {
+                    Vec3::Z
+                }
+            }
+            GizmoAxis::Z => {
+                if camera_forward.x.abs() > camera_forward.y.abs() {
+                    Vec3::X
+                } else {
+                    Vec3::Y
+                }
+            }
+            GizmoAxis::None => camera_forward,
+        }
+    }
+
+    /// Check if currently dragging
+    pub fn is_dragging_gizmo(&self) -> bool {
+        self.gizmo.dragging
+    }
+}
+
+/// Ray-plane intersection
+fn ray_plane_intersection(ray_origin: Vec3, ray_dir: Vec3, plane_point: Vec3, plane_normal: Vec3) -> Option<Vec3> {
+    let denom = ray_dir.dot(plane_normal);
+    if denom.abs() < 1e-6 {
+        return None;
+    }
+
+    let t = (plane_point - ray_origin).dot(plane_normal) / denom;
+    if t < 0.0 {
+        return None;
+    }
+
+    Some(ray_origin + ray_dir * t)
 }
 
 pub type SharedViewportState = Arc<Mutex<ViewportState>>;

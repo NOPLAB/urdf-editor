@@ -7,7 +7,7 @@ use parking_lot::Mutex;
 use std::sync::Arc;
 use uuid::Uuid;
 
-use urdf_core::{Part, Project};
+use urdf_core::{Part, Project, StlUnit};
 
 /// Editor tool mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -56,6 +56,8 @@ pub struct AppState {
     pub show_part_axes: bool,
     /// Show joint point markers
     pub show_joint_markers: bool,
+    /// STL import unit (for scaling)
+    pub stl_import_unit: StlUnit,
 }
 
 impl Default for AppState {
@@ -73,6 +75,7 @@ impl Default for AppState {
             pending_actions: Vec::new(),
             show_part_axes: true,
             show_joint_markers: true,
+            stl_import_unit: StlUnit::Millimeters,
         }
     }
 }

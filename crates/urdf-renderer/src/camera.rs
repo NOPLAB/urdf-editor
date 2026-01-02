@@ -48,8 +48,8 @@ impl Camera {
             up: Vec3::Z,
             fov: 60.0_f32.to_radians(),
             aspect,
-            near: 0.01,
-            far: 1000.0,
+            near: 0.1,
+            far: 100000.0,
             yaw,
             pitch,
             distance,
@@ -81,7 +81,7 @@ impl Camera {
 
     /// Zoom the camera
     pub fn zoom(&mut self, delta: f32) {
-        self.distance = (self.distance * (1.0 - delta * 0.1)).clamp(0.1, 500.0);
+        self.distance = (self.distance * (1.0 - delta * 0.1)).clamp(0.1, 10000.0);
         self.update_position_from_orbit();
     }
 

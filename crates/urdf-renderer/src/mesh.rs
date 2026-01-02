@@ -2,6 +2,7 @@
 
 use bytemuck::{Pod, Zeroable};
 use glam::Mat4;
+use tracing;
 use wgpu::util::DeviceExt;
 
 use urdf_core::Part;
@@ -48,6 +49,15 @@ pub struct MeshData {
 impl MeshData {
     /// Create mesh data from a Part
     pub fn from_part(device: &wgpu::Device, part: &Part) -> Self {
+        tracing::info!(
+            "Creating MeshData: {} vertices, {} normals, {} indices, bbox_min={:?}, bbox_max={:?}",
+            part.vertices.len(),
+            part.normals.len(),
+            part.indices.len(),
+            part.bbox_min,
+            part.bbox_max
+        );
+
         // Build vertices with normals
         let mut vertices = Vec::new();
 
@@ -73,6 +83,12 @@ impl MeshData {
         }
 
         let indices: Vec<u32> = (0..vertices.len() as u32).collect();
+
+        tracing::info!(
+            "MeshData created: {} GPU vertices, {} indices",
+            vertices.len(),
+            indices.len()
+        );
 
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Mesh Vertex Buffer"),
@@ -218,7 +234,7 @@ impl MeshRenderer {
             }),
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
-                cull_mode: Some(wgpu::Face::Back),
+                cull_mode: None, // Disable culling to show both sides
                 ..Default::default()
             },
             depth_stencil: Some(wgpu::DepthStencilState {

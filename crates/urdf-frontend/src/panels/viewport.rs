@@ -1,6 +1,7 @@
 //! 3D Viewport panel
 
 use glam::Vec3;
+use urdf_renderer::GizmoAxis;
 
 use crate::app_state::SharedAppState;
 use crate::panels::Panel;
@@ -9,12 +10,14 @@ use crate::viewport_state::SharedViewportState;
 /// 3D viewport panel
 pub struct ViewportPanel {
     last_size: egui::Vec2,
+    hovered_axis: GizmoAxis,
 }
 
 impl ViewportPanel {
     pub fn new() -> Self {
         Self {
             last_size: egui::Vec2::ZERO,
+            hovered_axis: GizmoAxis::None,
         }
     }
 
@@ -161,11 +164,76 @@ impl Panel for ViewportPanel {
             .sense(egui::Sense::click_and_drag()),
         );
 
+        // Get mouse position relative to viewport
+        let mouse_pos = response.hover_pos().or(response.interact_pointer_pos());
+        let local_mouse = mouse_pos.map(|p| p - response.rect.min);
+
         // Handle camera input
         let mut vp_state = viewport_state.lock();
 
-        // Middle mouse button for orbit/pan
-        if response.dragged_by(egui::PointerButton::Middle) {
+        // Gizmo interaction (left mouse button)
+        let mut gizmo_delta: Option<Vec3> = None;
+
+        if let Some(pos) = local_mouse {
+            // Check for gizmo hover
+            if !vp_state.is_dragging_gizmo() {
+                let hit_axis = vp_state.gizmo_hit_test(pos.x, pos.y, available_size.x, available_size.y);
+                if hit_axis != self.hovered_axis {
+                    self.hovered_axis = hit_axis;
+                    let queue = vp_state.queue.clone();
+                    vp_state.renderer.set_gizmo_highlight(&queue, hit_axis);
+                }
+            }
+
+            // Start drag on left click
+            if response.drag_started_by(egui::PointerButton::Primary) {
+                if self.hovered_axis != GizmoAxis::None {
+                    vp_state.start_gizmo_drag(self.hovered_axis, pos.x, pos.y, available_size.x, available_size.y);
+                }
+            }
+
+            // Update drag
+            if vp_state.is_dragging_gizmo() && response.dragged_by(egui::PointerButton::Primary) {
+                gizmo_delta = vp_state.update_gizmo_drag(pos.x, pos.y, available_size.x, available_size.y);
+            }
+
+            // End drag
+            if response.drag_stopped_by(egui::PointerButton::Primary) {
+                vp_state.end_gizmo_drag();
+            }
+        }
+
+        // Apply gizmo delta to part transform
+        if let Some(delta) = gizmo_delta {
+            if let Some(part_id) = vp_state.gizmo.part_id {
+                let queue = vp_state.queue.clone();
+                drop(vp_state);
+                // Get current transform and apply delta
+                let mut app = app_state.lock();
+                let new_transform = if let Some(part) = app.get_part_mut(part_id) {
+                    let translation = part.origin_transform.to_scale_rotation_translation().2;
+                    let new_translation = translation + delta;
+                    part.origin_transform = glam::Mat4::from_translation(new_translation);
+                    Some(part.origin_transform)
+                } else {
+                    None
+                };
+                drop(app);
+
+                // Update mesh renderer transform
+                if let Some(transform) = new_transform {
+                    let mut vp = viewport_state.lock();
+                    vp.renderer.update_part_transform(&queue, part_id, transform);
+                    drop(vp);
+                }
+
+                // Re-lock viewport state for rest of handling
+                vp_state = viewport_state.lock();
+            }
+        }
+
+        // Middle mouse button for orbit/pan (only if not dragging gizmo)
+        if !vp_state.is_dragging_gizmo() && response.dragged_by(egui::PointerButton::Middle) {
             let delta = response.drag_delta();
             if ui.input(|i| i.modifiers.shift) {
                 // Pan
@@ -178,7 +246,7 @@ impl Panel for ViewportPanel {
         }
 
         // Right mouse button for orbit as well
-        if response.dragged_by(egui::PointerButton::Secondary) {
+        if !vp_state.is_dragging_gizmo() && response.dragged_by(egui::PointerButton::Secondary) {
             let delta = response.drag_delta();
             let sensitivity = 0.005;
             vp_state.renderer.camera.orbit(-delta.x * sensitivity, delta.y * sensitivity);

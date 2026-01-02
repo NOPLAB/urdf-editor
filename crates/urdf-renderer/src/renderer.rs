@@ -10,6 +10,7 @@ use urdf_core::Part;
 
 use crate::axis::{AxisInstance, AxisRenderer};
 use crate::camera::Camera;
+use crate::gizmo::{GizmoAxis, GizmoRenderer};
 use crate::grid::GridRenderer;
 use crate::marker::{MarkerInstance, MarkerRenderer};
 use crate::mesh::{MeshData, MeshRenderer};
@@ -34,6 +35,7 @@ pub struct Renderer {
     mesh_renderer: MeshRenderer,
     axis_renderer: AxisRenderer,
     marker_renderer: MarkerRenderer,
+    pub gizmo_renderer: GizmoRenderer,
 
     // Data
     meshes: Vec<MeshEntry>,
@@ -43,6 +45,7 @@ pub struct Renderer {
     pub show_grid: bool,
     pub show_axes: bool,
     pub show_markers: bool,
+    pub show_gizmo: bool,
     selected_mesh: Option<usize>,
 
     format: wgpu::TextureFormat,
@@ -112,6 +115,14 @@ impl Renderer {
             &camera_buffer,
         );
 
+        let gizmo_renderer = GizmoRenderer::new(
+            device,
+            format,
+            depth_format,
+            &camera_bind_group_layout,
+            &camera_buffer,
+        );
+
         Self {
             camera,
             camera_buffer,
@@ -122,11 +133,13 @@ impl Renderer {
             mesh_renderer,
             axis_renderer,
             marker_renderer,
+            gizmo_renderer,
             meshes: Vec::new(),
             part_to_mesh: HashMap::new(),
             show_grid: true,
             show_axes: true,
             show_markers: true,
+            show_gizmo: true,
             selected_mesh: None,
             format,
             width,
@@ -180,6 +193,7 @@ impl Renderer {
 
     /// Add a part to the renderer
     pub fn add_part(&mut self, device: &wgpu::Device, part: &Part) -> usize {
+        tracing::info!("Renderer::add_part called for '{}'", part.name);
         let data = MeshData::from_part(device, part);
         let bind_group = self.mesh_renderer.create_instance_bind_group(device, &data);
 
@@ -190,6 +204,7 @@ impl Renderer {
             part_id: part.id,
         });
         self.part_to_mesh.insert(part.id, idx);
+        tracing::info!("Renderer now has {} meshes", self.meshes.len());
         idx
     }
 
@@ -266,6 +281,26 @@ impl Renderer {
         self.marker_renderer.update_instances(queue, instances);
     }
 
+    /// Show gizmo at position
+    pub fn show_gizmo(&mut self, queue: &wgpu::Queue, position: glam::Vec3, scale: f32) {
+        self.gizmo_renderer.show(queue, position, scale);
+    }
+
+    /// Hide gizmo
+    pub fn hide_gizmo(&mut self) {
+        self.gizmo_renderer.hide();
+    }
+
+    /// Set gizmo highlighted axis
+    pub fn set_gizmo_highlight(&mut self, queue: &wgpu::Queue, axis: GizmoAxis) {
+        self.gizmo_renderer.set_highlighted(queue, axis);
+    }
+
+    /// Hit test gizmo
+    pub fn gizmo_hit_test(&self, ray_origin: glam::Vec3, ray_dir: glam::Vec3, gizmo_pos: glam::Vec3, scale: f32) -> GizmoAxis {
+        self.gizmo_renderer.hit_test(ray_origin, ray_dir, gizmo_pos, scale)
+    }
+
     /// Render the scene
     pub fn render(
         &self,
@@ -320,6 +355,11 @@ impl Renderer {
         // Render markers
         if self.show_markers {
             self.marker_renderer.render(&mut render_pass);
+        }
+
+        // Render gizmo (always on top)
+        if self.show_gizmo {
+            self.gizmo_renderer.render(&mut render_pass);
         }
     }
 

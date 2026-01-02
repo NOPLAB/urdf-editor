@@ -1,5 +1,7 @@
 //! Part list panel
 
+use urdf_core::StlUnit;
+
 use crate::app_state::{AppAction, SharedAppState};
 use crate::panels::Panel;
 
@@ -33,6 +35,19 @@ impl Panel for PartListPanel {
                     app_state.lock().queue_action(AppAction::ImportStl(path));
                 }
             }
+
+            ui.separator();
+
+            ui.label("Unit:");
+            let mut state = app_state.lock();
+            let current_unit = state.stl_import_unit;
+            egui::ComboBox::from_id_salt("stl_unit")
+                .selected_text(current_unit.name())
+                .show_ui(ui, |ui| {
+                    for unit in StlUnit::ALL {
+                        ui.selectable_value(&mut state.stl_import_unit, *unit, unit.name());
+                    }
+                });
         });
 
         ui.separator();

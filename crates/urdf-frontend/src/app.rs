@@ -5,7 +5,7 @@ use std::sync::Arc;
 use egui_dock::{DockArea, DockState, NodeIndex, Style, TabViewer};
 use parking_lot::Mutex;
 
-use urdf_core::{load_stl, Project};
+use urdf_core::{load_stl_with_unit, Project};
 
 use crate::app_state::{create_shared_state, AppAction, SharedAppState};
 use crate::panels::{
@@ -107,13 +107,34 @@ impl UrdfEditorApp {
         for action in actions {
             match action {
                 AppAction::ImportStl(path) => {
-                    match load_stl(&path) {
+                    let unit = self.app_state.lock().stl_import_unit;
+                    match load_stl_with_unit(&path, unit) {
                         Ok(part) => {
-                            tracing::info!("Loaded STL: {} ({} vertices)", part.name, part.vertices.len());
+                            tracing::info!("Loaded STL: {} ({} vertices, unit={:?})", part.name, part.vertices.len(), unit);
+
+                            // Calculate bounding sphere for camera fit
+                            let center = glam::Vec3::new(
+                                (part.bbox_min[0] + part.bbox_max[0]) / 2.0,
+                                (part.bbox_min[1] + part.bbox_max[1]) / 2.0,
+                                (part.bbox_min[2] + part.bbox_max[2]) / 2.0,
+                            );
+                            let extent = glam::Vec3::new(
+                                part.bbox_max[0] - part.bbox_min[0],
+                                part.bbox_max[1] - part.bbox_min[1],
+                                part.bbox_max[2] - part.bbox_min[2],
+                            );
+                            let radius = extent.length() / 2.0;
 
                             // Add to viewport
                             if let Some(ref viewport_state) = self.viewport_state {
-                                viewport_state.lock().add_part(&part);
+                                tracing::info!("Adding part to viewport...");
+                                let mut vp = viewport_state.lock();
+                                vp.add_part(&part);
+                                // Auto-fit camera to new part
+                                vp.renderer.camera.fit_all(center, radius);
+                                tracing::info!("Part added, camera fitted to center={:?}, radius={}", center, radius);
+                            } else {
+                                tracing::warn!("viewport_state is None - cannot add part to renderer");
                             }
 
                             // Add to app state
@@ -143,6 +164,7 @@ impl UrdfEditorApp {
                                 if let Some(part) = state.get_part(id) {
                                     vp.update_axes_for_part(part);
                                     vp.update_markers_for_part(part, selected_point);
+                                    vp.show_gizmo_for_part(part);
                                 }
                             }
                         } else {

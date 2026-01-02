@@ -6,7 +6,7 @@ fn main() -> eframe::Result<()> {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "urdf_frontend=debug".into()),
+                .unwrap_or_else(|_| "urdf_frontend=debug,urdf_renderer=debug".into()),
         )
         .with(tracing_subscriber::fmt::layer())
         .init();

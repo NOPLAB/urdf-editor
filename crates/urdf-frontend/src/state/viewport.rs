@@ -144,7 +144,8 @@ impl ViewportState {
 
     /// Update a part's transform
     pub fn update_part_transform(&mut self, part_id: Uuid, transform: Mat4) {
-        self.renderer.update_part_transform(&self.queue, part_id, transform);
+        self.renderer
+            .update_part_transform(&self.queue, part_id, transform);
     }
 
     /// Update a part's color
@@ -189,11 +190,11 @@ impl ViewportState {
                     [1.0, 0.8, 0.2, 1.0] // Gold for selected
                 } else {
                     match jp.joint_type {
-                        urdf_core::JointType::Fixed => [0.5, 0.5, 1.0, 1.0],     // Blue
-                        urdf_core::JointType::Revolute => [0.2, 1.0, 0.2, 1.0],  // Green
+                        urdf_core::JointType::Fixed => [0.5, 0.5, 1.0, 1.0],      // Blue
+                        urdf_core::JointType::Revolute => [0.2, 1.0, 0.2, 1.0],   // Green
                         urdf_core::JointType::Continuous => [0.2, 0.8, 1.0, 1.0], // Cyan
-                        urdf_core::JointType::Prismatic => [1.0, 0.5, 0.2, 1.0], // Orange
-                        _ => [0.8, 0.8, 0.8, 1.0],                               // Gray
+                        urdf_core::JointType::Prismatic => [1.0, 0.5, 0.2, 1.0],  // Orange
+                        _ => [0.8, 0.8, 0.8, 1.0],                                // Gray
                     }
                 };
                 MarkerInstance::new(world_pos, 0.02, color)
@@ -271,28 +272,53 @@ impl ViewportState {
     }
 
     /// Test if a screen position hits the gizmo
-    pub fn gizmo_hit_test(&self, screen_x: f32, screen_y: f32, width: f32, height: f32) -> GizmoAxis {
+    pub fn gizmo_hit_test(
+        &self,
+        screen_x: f32,
+        screen_y: f32,
+        width: f32,
+        height: f32,
+    ) -> GizmoAxis {
         if self.gizmo.part_id.is_none() {
             return GizmoAxis::None;
         }
 
-        let (ray_origin, ray_dir) = self.renderer.camera.screen_to_ray(screen_x, screen_y, width, height);
-        self.renderer.gizmo_hit_test(ray_origin, ray_dir, self.gizmo.gizmo_position, self.gizmo.gizmo_scale)
+        let (ray_origin, ray_dir) = self
+            .renderer
+            .camera
+            .screen_to_ray(screen_x, screen_y, width, height);
+        self.renderer.gizmo_hit_test(
+            ray_origin,
+            ray_dir,
+            self.gizmo.gizmo_position,
+            self.gizmo.gizmo_scale,
+        )
     }
 
     /// Start dragging the gizmo
-    pub fn start_gizmo_drag(&mut self, axis: GizmoAxis, screen_x: f32, screen_y: f32, width: f32, height: f32) {
+    pub fn start_gizmo_drag(
+        &mut self,
+        axis: GizmoAxis,
+        screen_x: f32,
+        screen_y: f32,
+        width: f32,
+        height: f32,
+    ) {
         if axis == GizmoAxis::None {
             return;
         }
 
-        let (ray_origin, ray_dir) = self.renderer.camera.screen_to_ray(screen_x, screen_y, width, height);
+        let (ray_origin, ray_dir) = self
+            .renderer
+            .camera
+            .screen_to_ray(screen_x, screen_y, width, height);
 
         // Calculate intersection point with the axis plane
-        let axis_dir = axis.direction();
         let plane_normal = self.get_drag_plane_normal(axis);
 
-        if let Some(point) = ray_plane_intersection(ray_origin, ray_dir, self.gizmo.gizmo_position, plane_normal) {
+        if let Some(point) =
+            ray_plane_intersection(ray_origin, ray_dir, self.gizmo.gizmo_position, plane_normal)
+        {
             self.gizmo.dragging = true;
             self.gizmo.drag_axis = axis;
             self.gizmo.drag_start_pos = point;
@@ -301,15 +327,26 @@ impl ViewportState {
     }
 
     /// Update gizmo drag - returns the translation delta if dragging
-    pub fn update_gizmo_drag(&mut self, screen_x: f32, screen_y: f32, width: f32, height: f32) -> Option<Vec3> {
+    pub fn update_gizmo_drag(
+        &mut self,
+        screen_x: f32,
+        screen_y: f32,
+        width: f32,
+        height: f32,
+    ) -> Option<Vec3> {
         if !self.gizmo.dragging {
             return None;
         }
 
-        let (ray_origin, ray_dir) = self.renderer.camera.screen_to_ray(screen_x, screen_y, width, height);
+        let (ray_origin, ray_dir) = self
+            .renderer
+            .camera
+            .screen_to_ray(screen_x, screen_y, width, height);
         let plane_normal = self.get_drag_plane_normal(self.gizmo.drag_axis);
 
-        if let Some(current_point) = ray_plane_intersection(ray_origin, ray_dir, self.gizmo.gizmo_position, plane_normal) {
+        if let Some(current_point) =
+            ray_plane_intersection(ray_origin, ray_dir, self.gizmo.gizmo_position, plane_normal)
+        {
             let delta = current_point - self.gizmo.drag_start_pos;
 
             // Project delta onto the axis
@@ -321,7 +358,8 @@ impl ViewportState {
             self.gizmo.drag_start_pos = current_point;
 
             // Update gizmo visual
-            self.renderer.show_gizmo(&self.queue, self.gizmo.gizmo_position, self.gizmo.gizmo_scale);
+            self.renderer
+                .show_gizmo(&self.queue, self.gizmo.gizmo_position, self.gizmo.gizmo_scale);
 
             return Some(projected_delta);
         }
@@ -338,13 +376,8 @@ impl ViewportState {
 
     /// Get the plane normal for dragging on an axis
     fn get_drag_plane_normal(&self, axis: GizmoAxis) -> Vec3 {
-        let camera_forward = (self.renderer.camera.target - self.renderer.camera.position).normalize();
-        let axis_dir = axis.direction();
-
-        // Choose a plane that is most perpendicular to the camera view
-        // but contains the axis
-        let up = Vec3::Z;
-        let right = camera_forward.cross(up).normalize();
+        let camera_forward =
+            (self.renderer.camera.target - self.renderer.camera.position).normalize();
 
         match axis {
             GizmoAxis::X => {
@@ -380,7 +413,12 @@ impl ViewportState {
 }
 
 /// Ray-plane intersection
-fn ray_plane_intersection(ray_origin: Vec3, ray_dir: Vec3, plane_point: Vec3, plane_normal: Vec3) -> Option<Vec3> {
+fn ray_plane_intersection(
+    ray_origin: Vec3,
+    ray_dir: Vec3,
+    plane_point: Vec3,
+    plane_normal: Vec3,
+) -> Option<Vec3> {
     let denom = ray_dir.dot(plane_normal);
     if denom.abs() < 1e-6 {
         return None;

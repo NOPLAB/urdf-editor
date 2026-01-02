@@ -13,3 +13,7 @@ thiserror = { workspace = true }
 urdf-rs = { workspace = true }
 stl_io = { workspace = true }
 bytemuck = { workspace = true }
+tobj = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

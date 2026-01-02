@@ -2,9 +2,11 @@
 //!
 //! egui-based application for editing URDF files.
 
-mod app;
-mod app_state;
-mod viewport_state;
-mod panels;
+pub mod actions;
+pub mod app;
+pub mod panels;
+pub mod state;
 
+// Re-exports for convenience
 pub use app::UrdfEditorApp;
+pub use state::{AppAction, AppState, SharedAppState};

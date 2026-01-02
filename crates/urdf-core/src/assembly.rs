@@ -35,14 +35,8 @@ impl Link {
             name: name.into(),
             part_id: None,
             world_transform: Mat4::IDENTITY,
-            visual: VisualProperties {
-                origin: Pose::default(),
-                color: [0.5, 0.5, 0.5, 1.0],
-                material_name: None,
-            },
-            collision: CollisionProperties {
-                origin: Pose::default(),
-            },
+            visual: VisualProperties::default(),
+            collision: CollisionProperties::default(),
             inertial: InertialProperties {
                 origin: Pose::default(),
                 mass: 0.0,
@@ -62,10 +56,9 @@ impl Link {
                 origin: Pose::default(),
                 color: part.color,
                 material_name: part.material_name.clone(),
+                elements: Vec::new(),
             },
-            collision: CollisionProperties {
-                origin: Pose::default(),
-            },
+            collision: CollisionProperties::default(),
             inertial: InertialProperties {
                 origin: Pose::default(),
                 mass: part.mass,
@@ -75,18 +68,128 @@ impl Link {
     }
 }
 
-/// Visual properties for a link
+/// Single visual element for a link
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VisualProperties {
+pub struct VisualElement {
+    /// Optional name for this visual element
+    pub name: Option<String>,
     pub origin: Pose,
     pub color: [f32; 4],
     pub material_name: Option<String>,
+    /// Geometry type (for primitive shapes)
+    pub geometry: Option<GeometryType>,
 }
 
-/// Collision properties for a link
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct CollisionProperties {
+impl Default for VisualElement {
+    fn default() -> Self {
+        Self {
+            name: None,
+            origin: Pose::default(),
+            color: [0.5, 0.5, 0.5, 1.0],
+            material_name: None,
+            geometry: None,
+        }
+    }
+}
+
+/// Single collision element for a link
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CollisionElement {
+    /// Optional name for this collision element
+    pub name: Option<String>,
     pub origin: Pose,
+    /// Geometry type (for primitive shapes)
+    pub geometry: Option<GeometryType>,
+}
+
+impl Default for CollisionElement {
+    fn default() -> Self {
+        Self {
+            name: None,
+            origin: Pose::default(),
+            geometry: None,
+        }
+    }
+}
+
+/// Geometry type for visual/collision elements
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum GeometryType {
+    Mesh,
+    Box { size: [f32; 3] },
+    Cylinder { radius: f32, length: f32 },
+    Sphere { radius: f32 },
+    Capsule { radius: f32, length: f32 },
+}
+
+/// Visual properties for a link (supports multiple visual elements)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VisualProperties {
+    /// Primary visual element (for backward compatibility)
+    pub origin: Pose,
+    pub color: [f32; 4],
+    pub material_name: Option<String>,
+    /// Additional visual elements (if any)
+    #[serde(default)]
+    pub elements: Vec<VisualElement>,
+}
+
+impl Default for VisualProperties {
+    fn default() -> Self {
+        Self {
+            origin: Pose::default(),
+            color: [0.5, 0.5, 0.5, 1.0],
+            material_name: None,
+            elements: Vec::new(),
+        }
+    }
+}
+
+impl VisualProperties {
+    /// Get all visual elements (including primary)
+    pub fn all_elements(&self) -> Vec<VisualElement> {
+        let mut result = vec![VisualElement {
+            name: None,
+            origin: self.origin,
+            color: self.color,
+            material_name: self.material_name.clone(),
+            geometry: None,
+        }];
+        result.extend(self.elements.clone());
+        result
+    }
+}
+
+/// Collision properties for a link (supports multiple collision elements)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CollisionProperties {
+    /// Primary collision element (for backward compatibility)
+    pub origin: Pose,
+    /// Additional collision elements (if any)
+    #[serde(default)]
+    pub elements: Vec<CollisionElement>,
+}
+
+impl Default for CollisionProperties {
+    fn default() -> Self {
+        Self {
+            origin: Pose::default(),
+            elements: Vec::new(),
+        }
+    }
+}
+
+impl CollisionProperties {
+    /// Get all collision elements (including primary)
+    pub fn all_elements(&self) -> Vec<CollisionElement> {
+        let mut result = vec![CollisionElement {
+            name: None,
+            origin: self.origin,
+            geometry: None,
+        }];
+        result.extend(self.elements.clone());
+        result
+    }
 }
 
 /// Inertial properties for a link
@@ -143,10 +246,59 @@ pub struct Joint {
     pub limits: Option<JointLimits>,
     /// Joint dynamics
     pub dynamics: Option<JointDynamics>,
+    /// Joint mimic configuration (follows another joint)
+    pub mimic: Option<JointMimic>,
     /// Which joint point on parent was used
     pub parent_joint_point: Option<Uuid>,
     /// Which joint point on child was used
     pub child_joint_point: Option<Uuid>,
+}
+
+/// Joint mimic configuration
+/// Makes this joint follow another joint's position: value = multiplier * other_joint + offset
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JointMimic {
+    /// Name of the joint to mimic
+    pub joint: String,
+    /// Multiplier applied to the mimicked joint's position (default: 1.0)
+    pub multiplier: f32,
+    /// Offset added after multiplication (default: 0.0)
+    pub offset: f32,
+}
+
+impl Default for JointMimic {
+    fn default() -> Self {
+        Self {
+            joint: String::new(),
+            multiplier: 1.0,
+            offset: 0.0,
+        }
+    }
+}
+
+impl JointMimic {
+    /// Create a new mimic configuration
+    pub fn new(joint: impl Into<String>) -> Self {
+        Self {
+            joint: joint.into(),
+            multiplier: 1.0,
+            offset: 0.0,
+        }
+    }
+
+    /// Create a new mimic configuration with multiplier and offset
+    pub fn with_params(joint: impl Into<String>, multiplier: f32, offset: f32) -> Self {
+        Self {
+            joint: joint.into(),
+            multiplier,
+            offset,
+        }
+    }
+
+    /// Calculate the mimic value from the source joint's position
+    pub fn calculate(&self, source_position: f32) -> f32 {
+        self.multiplier * source_position + self.offset
+    }
 }
 
 impl Joint {
@@ -162,6 +314,7 @@ impl Joint {
             axis: Vec3::Z,
             limits: None,
             dynamics: None,
+            mimic: None,
             parent_joint_point: None,
             child_joint_point: None,
         }
@@ -186,6 +339,7 @@ impl Joint {
             axis: axis.normalize(),
             limits: Some(limits),
             dynamics: None,
+            mimic: None,
             parent_joint_point: None,
             child_joint_point: None,
         }

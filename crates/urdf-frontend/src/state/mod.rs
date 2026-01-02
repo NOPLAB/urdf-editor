@@ -1,33 +1,64 @@
-//! Application state
+//! Application state module
+
+mod editor;
+mod viewport;
+
+pub use editor::{EditorTool, PrimitiveType};
+pub use viewport::{GizmoInteraction, SharedViewportState, ViewportState};
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-
-use parking_lot::Mutex;
 use std::sync::Arc;
+
+use glam::{Mat4, Vec3};
+use parking_lot::Mutex;
 use uuid::Uuid;
 
 use urdf_core::{Part, Project, StlUnit};
 
-/// Editor tool mode
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum EditorTool {
-    #[default]
-    Select,
-    Move,
-    Rotate,
-    AddJointPoint,
-}
+/// Actions that can be performed on the app state
+#[derive(Debug, Clone)]
+pub enum AppAction {
+    // File actions
+    /// Import an STL file
+    ImportStl(PathBuf),
+    /// Import a URDF file
+    ImportUrdf(PathBuf),
+    /// Save project
+    SaveProject(Option<PathBuf>),
+    /// Load project
+    LoadProject(PathBuf),
+    /// Export URDF with path and robot name
+    ExportUrdf { path: PathBuf, robot_name: String },
+    /// New project
+    NewProject,
 
-impl EditorTool {
-    pub fn name(&self) -> &'static str {
-        match self {
-            EditorTool::Select => "Select",
-            EditorTool::Move => "Move",
-            EditorTool::Rotate => "Rotate",
-            EditorTool::AddJointPoint => "Add Joint Point",
-        }
-    }
+    // Part actions
+    /// Create a primitive shape
+    CreatePrimitive {
+        primitive_type: PrimitiveType,
+        name: Option<String>,
+    },
+    /// Create an empty part (no geometry)
+    CreateEmpty { name: Option<String> },
+    /// Select a part
+    SelectPart(Option<Uuid>),
+    /// Delete selected part
+    DeleteSelectedPart,
+    /// Update part transform
+    UpdatePartTransform { part_id: Uuid, transform: Mat4 },
+
+    // Assembly actions
+    /// Add a joint point to a part
+    AddJointPoint { part_id: Uuid, position: Vec3 },
+    /// Remove a joint point
+    RemoveJointPoint { part_id: Uuid, point_id: Uuid },
+    /// Connect two parts
+    ConnectParts { parent: Uuid, child: Uuid },
+    /// Disconnect a part from its parent
+    DisconnectPart { child: Uuid },
+    /// Connect a part to base_link
+    ConnectToBaseLink(Uuid),
 }
 
 /// Application state
@@ -51,7 +82,7 @@ pub struct AppState {
     /// Has unsaved changes
     pub modified: bool,
     /// Pending actions
-    pub pending_actions: Vec<AppAction>,
+    pending_actions: Vec<AppAction>,
     /// Show axes on selected part
     pub show_part_axes: bool,
     /// Show joint point markers
@@ -156,61 +187,6 @@ impl AppState {
         self.selected_joint_point = None;
         self.modified = false;
     }
-}
-
-/// Primitive type for creating geometric shapes
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PrimitiveType {
-    Box,
-    Cylinder,
-    Sphere,
-}
-
-impl PrimitiveType {
-    pub fn name(&self) -> &'static str {
-        match self {
-            PrimitiveType::Box => "Box",
-            PrimitiveType::Cylinder => "Cylinder",
-            PrimitiveType::Sphere => "Sphere",
-        }
-    }
-}
-
-/// Actions that can be performed on the app state
-#[derive(Debug, Clone)]
-pub enum AppAction {
-    /// Import an STL file
-    ImportStl(PathBuf),
-    /// Create a primitive shape
-    CreatePrimitive { primitive_type: PrimitiveType, name: Option<String> },
-    /// Create an empty part (no geometry)
-    CreateEmpty { name: Option<String> },
-    /// Select a part
-    SelectPart(Option<Uuid>),
-    /// Delete selected part
-    DeleteSelectedPart,
-    /// Update part transform
-    UpdatePartTransform { part_id: Uuid, transform: glam::Mat4 },
-    /// Add a joint point to a part
-    AddJointPoint { part_id: Uuid, position: glam::Vec3 },
-    /// Remove a joint point
-    RemoveJointPoint { part_id: Uuid, point_id: Uuid },
-    /// Connect two parts
-    ConnectParts { parent: Uuid, child: Uuid },
-    /// Disconnect a part from its parent
-    DisconnectPart { child: Uuid },
-    /// Export URDF with path and robot name
-    ExportUrdf { path: PathBuf, robot_name: String },
-    /// Save project
-    SaveProject(Option<PathBuf>),
-    /// Load project
-    LoadProject(PathBuf),
-    /// New project
-    NewProject,
-    /// Connect a part to base_link
-    ConnectToBaseLink(Uuid),
-    /// Import a URDF file
-    ImportUrdf(PathBuf),
 }
 
 pub type SharedAppState = Arc<Mutex<AppState>>;

@@ -9,14 +9,15 @@ use glam::Vec3;
 use uuid::Uuid;
 
 use crate::assembly::{
-    Assembly, CollisionProperties, InertialProperties, Joint, JointDynamics, Link, Pose,
-    VisualProperties,
+    Assembly, CollisionElement, CollisionProperties, GeometryType, InertialProperties, Joint,
+    JointDynamics, JointMimic, Link, Pose, VisualElement, VisualProperties,
 };
 use crate::inertia::InertiaMatrix;
 use crate::part::{JointLimits, JointType, Part};
 use crate::primitive::{generate_box_mesh, generate_cylinder_mesh, generate_sphere_mesh};
 use crate::project::{MaterialDef, Project};
-use crate::stl::{load_stl_with_unit, StlUnit};
+use crate::mesh::{load_mesh, MeshFormat};
+use crate::stl::StlUnit;
 
 /// Import options for URDF loading
 #[derive(Debug, Clone)]
@@ -27,6 +28,9 @@ pub struct ImportOptions {
     pub stl_unit: StlUnit,
     /// Default material color if not specified
     pub default_color: [f32; 4],
+    /// Package path mappings for resolving package:// URIs
+    /// Maps package name to its root directory
+    pub package_paths: HashMap<String, PathBuf>,
 }
 
 impl Default for ImportOptions {
@@ -35,6 +39,76 @@ impl Default for ImportOptions {
             base_dir: PathBuf::from("."),
             stl_unit: StlUnit::Meters,
             default_color: [0.7, 0.7, 0.7, 1.0],
+            package_paths: HashMap::new(),
+        }
+    }
+}
+
+impl ImportOptions {
+    /// Create import options with package paths auto-discovered from ROS environment
+    pub fn with_ros_packages() -> Self {
+        let mut options = Self::default();
+        options.package_paths = discover_ros_packages();
+        options
+    }
+
+    /// Add a package path mapping
+    pub fn add_package_path(&mut self, package_name: impl Into<String>, path: impl Into<PathBuf>) {
+        self.package_paths.insert(package_name.into(), path.into());
+    }
+}
+
+/// Discover ROS packages from environment variables
+fn discover_ros_packages() -> HashMap<String, PathBuf> {
+    let mut packages = HashMap::new();
+
+    // Try ROS_PACKAGE_PATH (ROS1 style, colon-separated)
+    if let Ok(ros_package_path) = std::env::var("ROS_PACKAGE_PATH") {
+        for path_str in ros_package_path.split(':') {
+            let path = Path::new(path_str);
+            if path.is_dir() {
+                discover_packages_in_dir(path, &mut packages);
+            }
+        }
+    }
+
+    // Try AMENT_PREFIX_PATH (ROS2 style, colon-separated)
+    if let Ok(ament_prefix_path) = std::env::var("AMENT_PREFIX_PATH") {
+        for path_str in ament_prefix_path.split(':') {
+            let share_path = Path::new(path_str).join("share");
+            if share_path.is_dir() {
+                discover_packages_in_dir(&share_path, &mut packages);
+            }
+        }
+    }
+
+    // Try COLCON_PREFIX_PATH (colcon workspaces)
+    if let Ok(colcon_prefix_path) = std::env::var("COLCON_PREFIX_PATH") {
+        for path_str in colcon_prefix_path.split(':') {
+            let share_path = Path::new(path_str).join("share");
+            if share_path.is_dir() {
+                discover_packages_in_dir(&share_path, &mut packages);
+            }
+        }
+    }
+
+    packages
+}
+
+/// Discover packages in a directory (looks for package.xml files)
+fn discover_packages_in_dir(dir: &Path, packages: &mut HashMap<String, PathBuf>) {
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                // Check if this directory contains a package.xml
+                let package_xml = path.join("package.xml");
+                if package_xml.exists() {
+                    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                        packages.insert(name.to_string(), path);
+                    }
+                }
+            }
         }
     }
 }
@@ -57,8 +131,8 @@ pub enum ImportError {
     #[error("Unsupported mesh format: {0} (only STL is supported)")]
     UnsupportedMeshFormat(String),
 
-    #[error("package:// URIs are not supported: {0}")]
-    PackageUriNotSupported(String),
+    #[error("Package not found: {package} (from URI: {uri})")]
+    PackageNotFound { package: String, uri: String },
 
     #[error("Link not found: {0}")]
     LinkNotFound(String),
@@ -138,6 +212,7 @@ pub fn import_urdf(urdf_path: &Path, options: &ImportOptions) -> Result<Project,
             &base_dir,
             options,
             &material_colors,
+            &options.package_paths,
         )?;
 
         // Process inertial properties
@@ -147,14 +222,8 @@ pub fn import_urdf(urdf_path: &Path, options: &ImportOptions) -> Result<Project,
             inertia: convert_inertia(&urdf_link.inertial.inertia),
         };
 
-        // Process collision properties
-        let collision_props = urdf_link
-            .collision
-            .first()
-            .map(|c| CollisionProperties {
-                origin: convert_pose(&c.origin),
-            })
-            .unwrap_or_default();
+        // Process collision properties (supports multiple collision elements)
+        let collision_props = process_collision_geometry(&urdf_link.collision);
 
         // Create Part if we have mesh data
         let part_id = if let Some(mut part) = part_opt {
@@ -239,6 +308,11 @@ pub fn import_urdf(urdf_path: &Path, options: &ImportOptions) -> Result<Project,
                 damping: d.damping as f32,
                 friction: d.friction as f32,
             }),
+            mimic: urdf_joint.mimic.as_ref().map(|m| JointMimic {
+                joint: m.joint.clone(),
+                multiplier: m.multiplier.unwrap_or(1.0) as f32,
+                offset: m.offset.unwrap_or(0.0) as f32,
+            }),
             parent_joint_point: None,
             child_joint_point: None,
         };
@@ -279,26 +353,64 @@ fn process_visual_geometry(
     base_dir: &Path,
     options: &ImportOptions,
     material_colors: &HashMap<String, [f32; 4]>,
+    package_paths: &HashMap<String, PathBuf>,
 ) -> Result<(Option<Part>, VisualProperties), ImportError> {
-    // Use first visual element if available
-    let visual = match visuals.first() {
-        Some(v) => v,
-        None => {
-            return Ok((
-                None,
-                VisualProperties {
-                    origin: Pose::default(),
-                    color: options.default_color,
-                    material_name: None,
-                },
-            ))
-        }
+    if visuals.is_empty() {
+        return Ok((
+            None,
+            VisualProperties::default(),
+        ));
+    }
+
+    // Process first visual element (primary)
+    let first_visual = &visuals[0];
+    let (color, material_name) = extract_material_info(first_visual, material_colors, options);
+    let origin = convert_pose(&first_visual.origin);
+
+    // Create part from first visual's geometry
+    let part = process_geometry(
+        &first_visual.geometry,
+        link_name,
+        base_dir,
+        options,
+        package_paths,
+        color,
+        material_name.clone(),
+    )?;
+
+    // Process additional visual elements (if any)
+    let mut additional_elements = Vec::new();
+    for (i, visual) in visuals.iter().skip(1).enumerate() {
+        let (elem_color, elem_material) = extract_material_info(visual, material_colors, options);
+        let elem_origin = convert_pose(&visual.origin);
+        let elem_geometry = convert_geometry_type(&visual.geometry);
+
+        additional_elements.push(VisualElement {
+            name: visual.name.clone().or_else(|| Some(format!("visual_{}", i + 1))),
+            origin: elem_origin,
+            color: elem_color,
+            material_name: elem_material,
+            geometry: elem_geometry,
+        });
+    }
+
+    let visual_props = VisualProperties {
+        origin,
+        color,
+        material_name,
+        elements: additional_elements,
     };
 
-    let origin = convert_pose(&visual.origin);
+    Ok((part, visual_props))
+}
 
-    // Get color from material
-    let (color, material_name) = if let Some(ref mat) = visual.material {
+/// Extract material color and name from a visual element
+fn extract_material_info(
+    visual: &urdf_rs::Visual,
+    material_colors: &HashMap<String, [f32; 4]>,
+    options: &ImportOptions,
+) -> ([f32; 4], Option<String>) {
+    if let Some(ref mat) = visual.material {
         let color = mat
             .color
             .as_ref()
@@ -322,20 +434,45 @@ fn process_visual_geometry(
         (color, name)
     } else {
         (options.default_color, None)
-    };
+    }
+}
 
-    let visual_props = VisualProperties {
-        origin,
-        color,
-        material_name: material_name.clone(),
-    };
+/// Convert URDF geometry to internal GeometryType
+fn convert_geometry_type(geometry: &urdf_rs::Geometry) -> Option<GeometryType> {
+    match geometry {
+        urdf_rs::Geometry::Mesh { .. } => Some(GeometryType::Mesh),
+        urdf_rs::Geometry::Box { size } => Some(GeometryType::Box {
+            size: [size.0[0] as f32, size.0[1] as f32, size.0[2] as f32],
+        }),
+        urdf_rs::Geometry::Cylinder { radius, length } => Some(GeometryType::Cylinder {
+            radius: *radius as f32,
+            length: *length as f32,
+        }),
+        urdf_rs::Geometry::Sphere { radius } => Some(GeometryType::Sphere {
+            radius: *radius as f32,
+        }),
+        urdf_rs::Geometry::Capsule { radius, length } => Some(GeometryType::Capsule {
+            radius: *radius as f32,
+            length: *length as f32,
+        }),
+    }
+}
 
-    // Process geometry
-    let part = match &visual.geometry {
+/// Process a single geometry element and create a Part if applicable
+fn process_geometry(
+    geometry: &urdf_rs::Geometry,
+    link_name: &str,
+    base_dir: &Path,
+    options: &ImportOptions,
+    package_paths: &HashMap<String, PathBuf>,
+    color: [f32; 4],
+    material_name: Option<String>,
+) -> Result<Option<Part>, ImportError> {
+    let part = match geometry {
         urdf_rs::Geometry::Mesh { filename, scale } => {
-            let mesh_path = resolve_mesh_path(filename, base_dir)?;
+            let mesh_path = resolve_mesh_path(filename, base_dir, package_paths)?;
             let mut part =
-                load_stl_with_unit(&mesh_path, options.stl_unit).map_err(|e| ImportError::MeshLoad {
+                load_mesh(&mesh_path, options.stl_unit).map_err(|e| ImportError::MeshLoad {
                     path: filename.clone(),
                     reason: e.to_string(),
                 })?;
@@ -405,7 +542,36 @@ fn process_visual_geometry(
         }
     };
 
-    Ok((part, visual_props))
+    Ok(part)
+}
+
+/// Process collision geometry elements
+fn process_collision_geometry(collisions: &[urdf_rs::Collision]) -> CollisionProperties {
+    if collisions.is_empty() {
+        return CollisionProperties::default();
+    }
+
+    // First collision element (primary)
+    let first_collision = &collisions[0];
+    let origin = convert_pose(&first_collision.origin);
+
+    // Additional collision elements
+    let mut additional_elements = Vec::new();
+    for (i, collision) in collisions.iter().skip(1).enumerate() {
+        let elem_origin = convert_pose(&collision.origin);
+        let elem_geometry = convert_geometry_type(&collision.geometry);
+
+        additional_elements.push(CollisionElement {
+            name: collision.name.clone().or_else(|| Some(format!("collision_{}", i + 1))),
+            origin: elem_origin,
+            geometry: elem_geometry,
+        });
+    }
+
+    CollisionProperties {
+        origin,
+        elements: additional_elements,
+    }
 }
 
 /// Create a Part from mesh data
@@ -433,10 +599,14 @@ fn create_part_from_mesh(
 }
 
 /// Resolve mesh path from URDF filename reference
-fn resolve_mesh_path(filename: &str, base_dir: &Path) -> Result<PathBuf, ImportError> {
-    // Check for package:// URI (not supported)
-    if filename.starts_with("package://") {
-        return Err(ImportError::PackageUriNotSupported(filename.to_string()));
+fn resolve_mesh_path(
+    filename: &str,
+    base_dir: &Path,
+    package_paths: &HashMap<String, PathBuf>,
+) -> Result<PathBuf, ImportError> {
+    // Handle package:// URI
+    if let Some(rest) = filename.strip_prefix("package://") {
+        return resolve_package_uri(rest, filename, package_paths, base_dir);
     }
 
     // Handle file:// URI
@@ -447,9 +617,13 @@ fn resolve_mesh_path(filename: &str, base_dir: &Path) -> Result<PathBuf, ImportE
     };
 
     // Check for supported format
-    let lower = path_str.to_lowercase();
-    if !lower.ends_with(".stl") {
-        return Err(ImportError::UnsupportedMeshFormat(filename.to_string()));
+    let format = MeshFormat::from_path(Path::new(path_str));
+    if !format.is_supported() {
+        return Err(ImportError::UnsupportedMeshFormat(format!(
+            "{} ({})",
+            filename,
+            format.name()
+        )));
     }
 
     // Resolve relative path
@@ -466,6 +640,67 @@ fn resolve_mesh_path(filename: &str, base_dir: &Path) -> Result<PathBuf, ImportE
     }
 
     Ok(path)
+}
+
+/// Resolve a package:// URI to a filesystem path
+fn resolve_package_uri(
+    rest: &str,
+    original_uri: &str,
+    package_paths: &HashMap<String, PathBuf>,
+    base_dir: &Path,
+) -> Result<PathBuf, ImportError> {
+    // Parse package://package_name/path/to/file
+    let parts: Vec<&str> = rest.splitn(2, '/').collect();
+    let package_name = parts[0];
+    let relative_path = parts.get(1).unwrap_or(&"");
+
+    // Check for supported format
+    let format = MeshFormat::from_path(Path::new(relative_path));
+    if !format.is_supported() {
+        return Err(ImportError::UnsupportedMeshFormat(format!(
+            "{} ({})",
+            original_uri,
+            format.name()
+        )));
+    }
+
+    // Try explicit package path mapping first
+    if let Some(package_root) = package_paths.get(package_name) {
+        let path = package_root.join(relative_path);
+        if path.exists() {
+            return Ok(path);
+        }
+    }
+
+    // Fallback: try to find package relative to base_dir
+    // This handles common cases where URDF is inside a package
+    let fallback_paths = [
+        // Same directory as URDF
+        base_dir.join(relative_path),
+        // Parent directory (URDF might be in urdf/ subdirectory)
+        base_dir.join("..").join(relative_path),
+        // Look for package_name directory relative to base_dir
+        base_dir.join("..").join(package_name).join(relative_path),
+        // Two levels up (common in ROS workspace layouts)
+        base_dir
+            .join("..")
+            .join("..")
+            .join(package_name)
+            .join(relative_path),
+    ];
+
+    for path in &fallback_paths {
+        if let Ok(canonical) = path.canonicalize() {
+            if canonical.exists() {
+                return Ok(canonical);
+            }
+        }
+    }
+
+    Err(ImportError::PackageNotFound {
+        package: package_name.to_string(),
+        uri: original_uri.to_string(),
+    })
 }
 
 /// Apply scale to part vertices
@@ -553,13 +788,38 @@ mod tests {
 
     #[test]
     fn test_resolve_mesh_path_package_uri() {
-        let result = resolve_mesh_path("package://robot/meshes/link.stl", Path::new("."));
-        assert!(matches!(result, Err(ImportError::PackageUriNotSupported(_))));
+        let packages = HashMap::new();
+        let result = resolve_mesh_path("package://robot/meshes/link.stl", Path::new("."), &packages);
+        assert!(matches!(result, Err(ImportError::PackageNotFound { .. })));
+    }
+
+    #[test]
+    fn test_resolve_mesh_path_with_package_mapping() {
+        use std::fs;
+        use tempfile::tempdir;
+
+        let temp = tempdir().unwrap();
+        let meshes_dir = temp.path().join("meshes");
+        fs::create_dir_all(&meshes_dir).unwrap();
+        let stl_path = meshes_dir.join("link.stl");
+        fs::write(&stl_path, b"dummy stl content").unwrap();
+
+        let mut packages = HashMap::new();
+        packages.insert("robot".to_string(), temp.path().to_path_buf());
+
+        let result = resolve_mesh_path(
+            "package://robot/meshes/link.stl",
+            Path::new("."),
+            &packages,
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), stl_path);
     }
 
     #[test]
     fn test_resolve_mesh_path_unsupported_format() {
-        let result = resolve_mesh_path("mesh.dae", Path::new("."));
+        let packages = HashMap::new();
+        let result = resolve_mesh_path("mesh.dae", Path::new("."), &packages);
         assert!(matches!(result, Err(ImportError::UnsupportedMeshFormat(_))));
     }
 

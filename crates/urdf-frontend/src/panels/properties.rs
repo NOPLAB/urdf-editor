@@ -5,8 +5,8 @@ use uuid::Uuid;
 
 use urdf_core::{JointLimits, JointPoint, JointType, MAX_JOINT_POINTS};
 
-use crate::app_state::SharedAppState;
 use crate::panels::Panel;
+use crate::state::SharedAppState;
 
 /// Properties panel for editing selected part
 pub struct PropertiesPanel;

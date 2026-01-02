@@ -14,6 +14,7 @@ pub mod export;
 pub mod import;
 pub mod primitive;
 pub mod stl;
+pub mod mesh;
 
 pub use part::*;
 pub use assembly::*;
@@ -23,3 +24,4 @@ pub use export::*;
 pub use import::*;
 pub use primitive::*;
 pub use stl::*;
+pub use mesh::*;

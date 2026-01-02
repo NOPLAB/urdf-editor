@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use crate::assembly::{Assembly, Joint, Link};
+use crate::assembly::{Assembly, GeometryType, Joint, Link, Pose};
 use crate::part::{JointType, Part};
 use crate::stl::save_stl;
 
@@ -169,15 +169,7 @@ fn write_link(urdf: &mut String, link: &Link, part: Option<&Part>, mesh_uri: Opt
     if let (Some(part), Some(mesh_uri)) = (part, mesh_uri) {
         // Inertial
         urdf.push_str("    <inertial>\n");
-        urdf.push_str(&format!(
-            "      <origin xyz=\"{} {} {}\" rpy=\"{} {} {}\"/>\n",
-            link.inertial.origin.xyz[0],
-            link.inertial.origin.xyz[1],
-            link.inertial.origin.xyz[2],
-            link.inertial.origin.rpy[0],
-            link.inertial.origin.rpy[1],
-            link.inertial.origin.rpy[2]
-        ));
+        write_origin(urdf, &link.inertial.origin, 6);
         urdf.push_str(&format!(
             "      <mass value=\"{}\"/>\n",
             link.inertial.mass
@@ -189,54 +181,137 @@ fn write_link(urdf: &mut String, link: &Link, part: Option<&Part>, mesh_uri: Opt
         ));
         urdf.push_str("    </inertial>\n");
 
-        // Visual
-        urdf.push_str("    <visual>\n");
-        urdf.push_str(&format!(
-            "      <origin xyz=\"{} {} {}\" rpy=\"{} {} {}\"/>\n",
-            link.visual.origin.xyz[0],
-            link.visual.origin.xyz[1],
-            link.visual.origin.xyz[2],
-            link.visual.origin.rpy[0],
-            link.visual.origin.rpy[1],
-            link.visual.origin.rpy[2]
-        ));
-        urdf.push_str(&format!(
-            "      <geometry>\n        <mesh filename=\"{}\"/>\n      </geometry>\n",
-            xml_escape(mesh_uri)
-        ));
-        if let Some(ref material_name) = part.material_name {
-            urdf.push_str(&format!(
-                "      <material name=\"{}\"/>\n",
-                xml_escape(material_name)
-            ));
-        } else {
-            urdf.push_str(&format!(
-                "      <material name=\"\">\n        <color rgba=\"{} {} {} {}\"/>\n      </material>\n",
-                part.color[0], part.color[1], part.color[2], part.color[3]
-            ));
-        }
-        urdf.push_str("    </visual>\n");
+        // Primary Visual
+        write_visual_element(urdf, None, &link.visual.origin, mesh_uri,
+            part.material_name.as_deref(), &part.color, None);
 
-        // Collision
-        urdf.push_str("    <collision>\n");
-        urdf.push_str(&format!(
-            "      <origin xyz=\"{} {} {}\" rpy=\"{} {} {}\"/>\n",
-            link.collision.origin.xyz[0],
-            link.collision.origin.xyz[1],
-            link.collision.origin.xyz[2],
-            link.collision.origin.rpy[0],
-            link.collision.origin.rpy[1],
-            link.collision.origin.rpy[2]
-        ));
-        urdf.push_str(&format!(
-            "      <geometry>\n        <mesh filename=\"{}\"/>\n      </geometry>\n",
-            xml_escape(mesh_uri)
-        ));
-        urdf.push_str("    </collision>\n");
+        // Additional Visual elements
+        for elem in &link.visual.elements {
+            let geom_str = elem.geometry.as_ref().map(|g| geometry_to_string(g));
+            write_visual_element(
+                urdf,
+                elem.name.as_deref(),
+                &elem.origin,
+                mesh_uri,  // Use same mesh for now (could be extended)
+                elem.material_name.as_deref(),
+                &elem.color,
+                geom_str.as_deref(),
+            );
+        }
+
+        // Primary Collision
+        write_collision_element(urdf, None, &link.collision.origin, mesh_uri, None);
+
+        // Additional Collision elements
+        for elem in &link.collision.elements {
+            let geom_str = elem.geometry.as_ref().map(|g| geometry_to_string(g));
+            write_collision_element(
+                urdf,
+                elem.name.as_deref(),
+                &elem.origin,
+                mesh_uri,  // Use same mesh for now (could be extended)
+                geom_str.as_deref(),
+            );
+        }
     }
     // Empty links (like base_link) have no visual/collision/inertial
 
     urdf.push_str("  </link>\n\n");
+}
+
+fn write_origin(urdf: &mut String, origin: &Pose, indent: usize) {
+    let indent_str = " ".repeat(indent);
+    urdf.push_str(&format!(
+        "{}<origin xyz=\"{} {} {}\" rpy=\"{} {} {}\"/>\n",
+        indent_str,
+        origin.xyz[0], origin.xyz[1], origin.xyz[2],
+        origin.rpy[0], origin.rpy[1], origin.rpy[2]
+    ));
+}
+
+fn write_visual_element(
+    urdf: &mut String,
+    name: Option<&str>,
+    origin: &Pose,
+    mesh_uri: &str,
+    material_name: Option<&str>,
+    color: &[f32; 4],
+    geometry_override: Option<&str>,
+) {
+    if let Some(n) = name {
+        urdf.push_str(&format!("    <visual name=\"{}\">\n", xml_escape(n)));
+    } else {
+        urdf.push_str("    <visual>\n");
+    }
+
+    write_origin(urdf, origin, 6);
+
+    if let Some(geom) = geometry_override {
+        urdf.push_str(&format!("      <geometry>\n        {}\n      </geometry>\n", geom));
+    } else {
+        urdf.push_str(&format!(
+            "      <geometry>\n        <mesh filename=\"{}\"/>\n      </geometry>\n",
+            xml_escape(mesh_uri)
+        ));
+    }
+
+    if let Some(mat_name) = material_name {
+        urdf.push_str(&format!(
+            "      <material name=\"{}\"/>\n",
+            xml_escape(mat_name)
+        ));
+    } else {
+        urdf.push_str(&format!(
+            "      <material name=\"\">\n        <color rgba=\"{} {} {} {}\"/>\n      </material>\n",
+            color[0], color[1], color[2], color[3]
+        ));
+    }
+    urdf.push_str("    </visual>\n");
+}
+
+fn write_collision_element(
+    urdf: &mut String,
+    name: Option<&str>,
+    origin: &Pose,
+    mesh_uri: &str,
+    geometry_override: Option<&str>,
+) {
+    if let Some(n) = name {
+        urdf.push_str(&format!("    <collision name=\"{}\">\n", xml_escape(n)));
+    } else {
+        urdf.push_str("    <collision>\n");
+    }
+
+    write_origin(urdf, origin, 6);
+
+    if let Some(geom) = geometry_override {
+        urdf.push_str(&format!("      <geometry>\n        {}\n      </geometry>\n", geom));
+    } else {
+        urdf.push_str(&format!(
+            "      <geometry>\n        <mesh filename=\"{}\"/>\n      </geometry>\n",
+            xml_escape(mesh_uri)
+        ));
+    }
+    urdf.push_str("    </collision>\n");
+}
+
+fn geometry_to_string(geometry: &GeometryType) -> String {
+    match geometry {
+        GeometryType::Mesh => "<!-- mesh -->".to_string(),
+        GeometryType::Box { size } => {
+            format!("<box size=\"{} {} {}\"/>", size[0], size[1], size[2])
+        }
+        GeometryType::Cylinder { radius, length } => {
+            format!("<cylinder radius=\"{}\" length=\"{}\"/>", radius, length)
+        }
+        GeometryType::Sphere { radius } => {
+            format!("<sphere radius=\"{}\"/>", radius)
+        }
+        GeometryType::Capsule { radius, length } => {
+            // Capsule is not standard URDF, approximate as cylinder
+            format!("<cylinder radius=\"{}\" length=\"{}\"/>", radius, length)
+        }
+    }
 }
 
 fn write_joint(urdf: &mut String, joint: &Joint, parent_name: &str, child_name: &str) {
@@ -290,6 +365,13 @@ fn write_joint(urdf: &mut String, joint: &Joint, parent_name: &str, child_name: 
         urdf.push_str(&format!(
             "    <dynamics damping=\"{}\" friction=\"{}\"/>\n",
             dynamics.damping, dynamics.friction
+        ));
+    }
+
+    if let Some(ref mimic) = joint.mimic {
+        urdf.push_str(&format!(
+            "    <mimic joint=\"{}\" multiplier=\"{}\" offset=\"{}\"/>\n",
+            xml_escape(&mimic.joint), mimic.multiplier, mimic.offset
         ));
     }
 

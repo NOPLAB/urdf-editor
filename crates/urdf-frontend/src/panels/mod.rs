@@ -1,15 +1,14 @@
 //! UI panels
 
-mod viewport;
 mod part_list;
 mod properties;
+mod viewport;
 
-pub use viewport::ViewportPanel;
 pub use part_list::PartListPanel;
 pub use properties::PropertiesPanel;
+pub use viewport::ViewportPanel;
 
-use crate::app_state::SharedAppState;
-use crate::viewport_state::SharedViewportState;
+use crate::state::{SharedAppState, SharedViewportState};
 
 /// Panel trait for dockable UI panels
 pub trait Panel {

@@ -24,9 +24,10 @@ egui-wgpu = "0.30"
 glam = "0.29"
 bytemuck = { version = "1", features = ["derive"] }
 
-# STL/URDF
+# STL/URDF/Mesh formats
 stl_io = "0.7"
 urdf-rs = "0.9"
+tobj = "4"
 
 # Serialization
 serde = { version = "1", features = ["derive"] }

@@ -3,14 +3,10 @@
 mod viewport;
 mod part_list;
 mod properties;
-mod hierarchy;
-mod graph;
 
 pub use viewport::ViewportPanel;
 pub use part_list::PartListPanel;
 pub use properties::PropertiesPanel;
-pub use hierarchy::HierarchyPanel;
-pub use graph::GraphPanel;
 
 use crate::app_state::SharedAppState;
 use crate::viewport_state::SharedViewportState;

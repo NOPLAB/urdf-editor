@@ -15,7 +15,6 @@ egui = { workspace = true }
 eframe = { workspace = true }
 egui_dock = { workspace = true }
 egui-wgpu = { workspace = true }
-egui-snarl = { workspace = true }
 wgpu = { workspace = true }
 glam = { workspace = true }
 parking_lot = { workspace = true }

@@ -5,12 +5,10 @@ use std::sync::Arc;
 use egui_dock::{DockArea, DockState, NodeIndex, Style, TabViewer};
 use parking_lot::Mutex;
 
-use urdf_core::{load_stl_with_unit, Project};
+use urdf_core::{load_stl_with_unit, Joint, JointPoint, Link, Pose, Project};
 
 use crate::app_state::{create_shared_state, AppAction, SharedAppState};
-use crate::panels::{
-    GraphPanel, HierarchyPanel, Panel, PartListPanel, PropertiesPanel, ViewportPanel,
-};
+use crate::panels::{Panel, PartListPanel, PropertiesPanel, ViewportPanel};
 use crate::viewport_state::{SharedViewportState, ViewportState};
 
 /// Panel types
@@ -18,8 +16,6 @@ enum PanelType {
     Viewport(ViewportPanel),
     PartList(PartListPanel),
     Properties(PropertiesPanel),
-    Hierarchy(HierarchyPanel),
-    Graph(GraphPanel),
 }
 
 impl PanelType {
@@ -28,8 +24,6 @@ impl PanelType {
             PanelType::Viewport(p) => p.name(),
             PanelType::PartList(p) => p.name(),
             PanelType::Properties(p) => p.name(),
-            PanelType::Hierarchy(p) => p.name(),
-            PanelType::Graph(p) => p.name(),
         }
     }
 }
@@ -61,8 +55,6 @@ impl TabViewer for UrdfTabViewer<'_> {
             }
             PanelType::PartList(panel) => panel.ui(ui, self.app_state),
             PanelType::Properties(panel) => panel.ui(ui, self.app_state),
-            PanelType::Hierarchy(panel) => panel.ui(ui, self.app_state),
-            PanelType::Graph(panel) => panel.ui(ui, self.app_state),
         }
     }
 }
@@ -240,6 +232,120 @@ impl UrdfEditorApp {
                         }
                     }
                 }
+                AppAction::ConnectParts { parent, child } => {
+                    let mut state = self.app_state.lock();
+
+                    // Helper to find or create a link for a part
+                    let find_or_create_link = |state: &mut crate::app_state::AppState, part_id: uuid::Uuid| -> Option<uuid::Uuid> {
+                        // Check if link already exists for this part
+                        if let Some((link_id, _)) = state.project.assembly.links.iter().find(|(_, l)| l.part_id == part_id) {
+                            return Some(*link_id);
+                        }
+                        // Create new link
+                        if let Some(part) = state.parts.get(&part_id) {
+                            let link = Link::from_part(part);
+                            let link_id = state.project.assembly.add_link(link);
+                            Some(link_id)
+                        } else {
+                            None
+                        }
+                    };
+
+                    // Get or create links
+                    let parent_link_id = find_or_create_link(&mut state, parent);
+                    let child_link_id = find_or_create_link(&mut state, child);
+
+                    if let (Some(parent_link_id), Some(child_link_id)) = (parent_link_id, child_link_id) {
+                        // Disconnect child from existing parent first
+                        if state.project.assembly.parent.contains_key(&child_link_id) {
+                            if let Err(e) = state.project.assembly.disconnect(child_link_id) {
+                                tracing::warn!("Failed to disconnect existing parent: {}", e);
+                            }
+                        }
+
+                        // Get names first to avoid borrow issues
+                        let child_name_for_jp = state.parts.get(&child).map(|p| p.name.clone()).unwrap_or_else(|| "child".to_string());
+                        let parent_name_for_jp = state.parts.get(&parent).map(|p| p.name.clone()).unwrap_or_else(|| "parent".to_string());
+
+                        // Create joint point on parent part (at center)
+                        let parent_jp_id = if let Some(part) = state.parts.get_mut(&parent) {
+                            let center = glam::Vec3::new(
+                                (part.bbox_min[0] + part.bbox_max[0]) / 2.0,
+                                (part.bbox_min[1] + part.bbox_max[1]) / 2.0,
+                                (part.bbox_min[2] + part.bbox_max[2]) / 2.0,
+                            );
+                            let jp = JointPoint::new(format!("joint_to_{}", child_name_for_jp), center);
+                            let jp_id = jp.id;
+                            part.joint_points.push(jp);
+                            Some(jp_id)
+                        } else {
+                            None
+                        };
+
+                        // Create joint point on child part (at center)
+                        let child_jp_id = if let Some(part) = state.parts.get_mut(&child) {
+                            let center = glam::Vec3::new(
+                                (part.bbox_min[0] + part.bbox_max[0]) / 2.0,
+                                (part.bbox_min[1] + part.bbox_max[1]) / 2.0,
+                                (part.bbox_min[2] + part.bbox_max[2]) / 2.0,
+                            );
+                            let jp = JointPoint::new(format!("joint_from_{}", parent_name_for_jp), center);
+                            let jp_id = jp.id;
+                            part.joint_points.push(jp);
+                            Some(jp_id)
+                        } else {
+                            None
+                        };
+
+                        // Get names for joint
+                        let parent_name = state.project.assembly.links.get(&parent_link_id)
+                            .map(|l| l.name.clone())
+                            .unwrap_or_default();
+                        let child_name = state.project.assembly.links.get(&child_link_id)
+                            .map(|l| l.name.clone())
+                            .unwrap_or_default();
+
+                        // Create fixed joint
+                        let mut joint = Joint::fixed(
+                            format!("{}_to_{}", parent_name, child_name),
+                            parent_link_id,
+                            child_link_id,
+                            Pose::default(),
+                        );
+                        joint.parent_joint_point = parent_jp_id;
+                        joint.child_joint_point = child_jp_id;
+
+                        match state.project.assembly.connect(parent_link_id, child_link_id, joint) {
+                            Ok(joint_id) => {
+                                tracing::info!("Connected {} to {} via joint {}", parent_name, child_name, joint_id);
+                                state.modified = true;
+                            }
+                            Err(e) => {
+                                tracing::error!("Failed to connect parts: {}", e);
+                            }
+                        }
+                    }
+                }
+                AppAction::DisconnectPart { child } => {
+                    let mut state = self.app_state.lock();
+
+                    // Find the link for this part
+                    let child_link_id = state.project.assembly.links.iter()
+                        .find(|(_, l)| l.part_id == child)
+                        .map(|(id, _)| *id);
+
+                    if let Some(link_id) = child_link_id {
+                        match state.project.assembly.disconnect(link_id) {
+                            Ok(joint) => {
+                                tracing::info!("Disconnected part {}, removed joint {}", child, joint.name);
+                                state.modified = true;
+                            }
+                            Err(e) => {
+                                tracing::error!("Failed to disconnect part: {}", e);
+                            }
+                        }
+                    }
+                }
                 _ => {
                     tracing::warn!("Unhandled action: {:?}", action);
                 }
@@ -379,32 +485,18 @@ fn create_dock_layout() -> DockState<PanelType> {
     // Get the main surface
     let surface = dock_state.main_surface_mut();
 
-    // Split right for properties (now includes joint points)
+    // Split right for properties
     let [_viewport, _right] = surface.split_right(
         NodeIndex::root(),
         0.75,
         vec![PanelType::Properties(PropertiesPanel::new())],
     );
 
-    // Split left for parts list
-    let [left, _viewport] = surface.split_left(
+    // Split left for parts list (now includes hierarchy via tree structure)
+    let [_left, _viewport] = surface.split_left(
         NodeIndex::root(),
         0.2,
         vec![PanelType::PartList(PartListPanel::new())],
-    );
-
-    // Add hierarchy below parts
-    surface.split_below(
-        left,
-        0.6,
-        vec![PanelType::Hierarchy(HierarchyPanel::new())],
-    );
-
-    // Split bottom for graph
-    surface.split_below(
-        NodeIndex::root(),
-        0.7,
-        vec![PanelType::Graph(GraphPanel::new())],
     );
 
     dock_state

@@ -3,14 +3,12 @@
 mod viewport;
 mod part_list;
 mod properties;
-mod joint_points;
 mod hierarchy;
 mod graph;
 
 pub use viewport::ViewportPanel;
 pub use part_list::PartListPanel;
 pub use properties::PropertiesPanel;
-pub use joint_points::JointPointsPanel;
 pub use hierarchy::HierarchyPanel;
 pub use graph::GraphPanel;
 

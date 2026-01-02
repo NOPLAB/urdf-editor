@@ -9,8 +9,7 @@ use urdf_core::{load_stl_with_unit, Project};
 
 use crate::app_state::{create_shared_state, AppAction, SharedAppState};
 use crate::panels::{
-    GraphPanel, HierarchyPanel, JointPointsPanel, Panel, PartListPanel, PropertiesPanel,
-    ViewportPanel,
+    GraphPanel, HierarchyPanel, Panel, PartListPanel, PropertiesPanel, ViewportPanel,
 };
 use crate::viewport_state::{SharedViewportState, ViewportState};
 
@@ -19,7 +18,6 @@ enum PanelType {
     Viewport(ViewportPanel),
     PartList(PartListPanel),
     Properties(PropertiesPanel),
-    JointPoints(JointPointsPanel),
     Hierarchy(HierarchyPanel),
     Graph(GraphPanel),
 }
@@ -30,7 +28,6 @@ impl PanelType {
             PanelType::Viewport(p) => p.name(),
             PanelType::PartList(p) => p.name(),
             PanelType::Properties(p) => p.name(),
-            PanelType::JointPoints(p) => p.name(),
             PanelType::Hierarchy(p) => p.name(),
             PanelType::Graph(p) => p.name(),
         }
@@ -64,7 +61,6 @@ impl TabViewer for UrdfTabViewer<'_> {
             }
             PanelType::PartList(panel) => panel.ui(ui, self.app_state),
             PanelType::Properties(panel) => panel.ui(ui, self.app_state),
-            PanelType::JointPoints(panel) => panel.ui(ui, self.app_state),
             PanelType::Hierarchy(panel) => panel.ui(ui, self.app_state),
             PanelType::Graph(panel) => panel.ui(ui, self.app_state),
         }
@@ -390,18 +386,11 @@ fn create_dock_layout() -> DockState<PanelType> {
     // Get the main surface
     let surface = dock_state.main_surface_mut();
 
-    // Split right for properties
-    let [_viewport, right] = surface.split_right(
+    // Split right for properties (now includes joint points)
+    let [_viewport, _right] = surface.split_right(
         NodeIndex::root(),
         0.75,
         vec![PanelType::Properties(PropertiesPanel::new())],
-    );
-
-    // Add joint points below properties
-    surface.split_below(
-        right,
-        0.5,
-        vec![PanelType::JointPoints(JointPointsPanel::new())],
     );
 
     // Split left for parts list

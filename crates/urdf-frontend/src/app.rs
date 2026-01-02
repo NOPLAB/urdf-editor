@@ -615,7 +615,8 @@ impl eframe::App for UrdfEditorApp {
                     }
                     if ui.button("Import URDF...").clicked() {
                         if let Some(path) = rfd::FileDialog::new()
-                            .add_filter("URDF files", &["urdf", "URDF", "xml"])
+                            .add_filter("URDF/Xacro", &["urdf", "xacro", "xml"])
+                            .add_filter("All files", &["*"])
                             .pick_file()
                         {
                             self.app_state.lock().queue_action(AppAction::ImportUrdf(path));

@@ -11,7 +11,9 @@ struct InstanceUniform {
     model: mat4x4<f32>,
     color: vec4<f32>,
     selected: u32,
-    _padding: vec3<u32>,
+    _padding1: u32,
+    _padding2: u32,
+    _padding3: u32,
 };
 
 @group(0) @binding(0)

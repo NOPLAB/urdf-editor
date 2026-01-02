@@ -1,9 +1,9 @@
 {
-  "name": "adachirei-rl",
+  "name": "urdf-editor",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "AdachiRei reinforcement learning project",
+  "description": "",
   "scripts": {
     "prepare": "husky"
   },

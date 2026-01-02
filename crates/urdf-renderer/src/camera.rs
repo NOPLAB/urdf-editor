@@ -46,7 +46,7 @@ impl Camera {
             position,
             target,
             up: Vec3::Z,
-            fov: 60.0_f32.to_radians(),
+            fov: 40.0_f32.to_radians(),
             aspect,
             near: 0.1,
             far: 100000.0,
@@ -83,6 +83,26 @@ impl Camera {
     pub fn zoom(&mut self, delta: f32) {
         self.distance = (self.distance * (1.0 - delta * 0.1)).clamp(0.1, 10000.0);
         self.update_position_from_orbit();
+    }
+
+    /// Set field of view in degrees
+    pub fn set_fov_degrees(&mut self, fov_degrees: f32) {
+        self.fov = fov_degrees.clamp(10.0, 120.0).to_radians();
+    }
+
+    /// Get field of view in degrees
+    pub fn fov_degrees(&self) -> f32 {
+        self.fov.to_degrees()
+    }
+
+    /// Set near clipping plane
+    pub fn set_near(&mut self, near: f32) {
+        self.near = near.max(0.001);
+    }
+
+    /// Set far clipping plane
+    pub fn set_far(&mut self, far: f32) {
+        self.far = far.max(self.near + 1.0);
     }
 
     fn update_position_from_orbit(&mut self) {

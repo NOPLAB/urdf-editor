@@ -14,8 +14,8 @@ use crate::part::{JointLimits, JointType, Part};
 pub struct Link {
     pub id: Uuid,
     pub name: String,
-    /// Reference to the part this link uses
-    pub part_id: Uuid,
+    /// Reference to the part this link uses (None for empty links like base_link)
+    pub part_id: Option<Uuid>,
     /// Transform of this link in world space (computed)
     #[serde(skip)]
     pub world_transform: Mat4,
@@ -28,12 +28,35 @@ pub struct Link {
 }
 
 impl Link {
+    /// Create a new empty link (e.g., for base_link)
+    pub fn empty(name: impl Into<String>) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            name: name.into(),
+            part_id: None,
+            world_transform: Mat4::IDENTITY,
+            visual: VisualProperties {
+                origin: Pose::default(),
+                color: [0.5, 0.5, 0.5, 1.0],
+                material_name: None,
+            },
+            collision: CollisionProperties {
+                origin: Pose::default(),
+            },
+            inertial: InertialProperties {
+                origin: Pose::default(),
+                mass: 0.0,
+                inertia: InertiaMatrix::default(),
+            },
+        }
+    }
+
     /// Create a new link from a part
     pub fn from_part(part: &Part) -> Self {
         Self {
             id: Uuid::new_v4(),
             name: part.name.clone(),
-            part_id: part.id,
+            part_id: Some(part.id),
             world_transform: Mat4::IDENTITY,
             visual: VisualProperties {
                 origin: Pose::default(),
@@ -208,26 +231,37 @@ impl Default for Assembly {
 }
 
 impl Assembly {
-    /// Create a new empty assembly
+    /// Create a new empty assembly with base_link
     pub fn new(name: impl Into<String>) -> Self {
+        let base_link = Link::empty("base_link");
+        let base_link_id = base_link.id;
+        let mut links = HashMap::new();
+        links.insert(base_link_id, base_link);
+
         Self {
             name: name.into(),
-            root_link: None,
-            links: HashMap::new(),
+            root_link: Some(base_link_id),
+            links,
             joints: HashMap::new(),
             children: HashMap::new(),
             parent: HashMap::new(),
         }
     }
 
-    /// Add a link to the assembly
+    /// Get the base_link (root link)
+    pub fn base_link(&self) -> Option<&Link> {
+        self.root_link.and_then(|id| self.links.get(&id))
+    }
+
+    /// Get the base_link mutably
+    pub fn base_link_mut(&mut self) -> Option<&mut Link> {
+        self.root_link.and_then(|id| self.links.get_mut(&id))
+    }
+
+    /// Add a link to the assembly (does not automatically set as root)
     pub fn add_link(&mut self, link: Link) -> Uuid {
         let id = link.id;
         self.links.insert(id, link);
-        // If this is the first link, make it the root
-        if self.root_link.is_none() {
-            self.root_link = Some(id);
-        }
         id
     }
 

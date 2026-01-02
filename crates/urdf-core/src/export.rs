@@ -127,16 +127,22 @@ fn write_link_recursive(
         .get(&link_id)
         .ok_or(ExportError::LinkNotFound(link_id))?;
 
-    let part = parts
-        .get(&link.part_id)
-        .ok_or(ExportError::PartNotFound(link.part_id))?;
+    // Handle links with or without parts
+    if let Some(part_id) = link.part_id {
+        let part = parts
+            .get(&part_id)
+            .ok_or(ExportError::PartNotFound(part_id))?;
 
-    let mesh_uri = mesh_paths
-        .get(&link.part_id)
-        .ok_or(ExportError::MeshNotFound(link.part_id))?;
+        let mesh_uri = mesh_paths
+            .get(&part_id)
+            .ok_or(ExportError::MeshNotFound(part_id))?;
 
-    // Write link
-    write_link(urdf, link, part, mesh_uri);
+        // Write link with mesh
+        write_link(urdf, link, Some(part), Some(mesh_uri));
+    } else {
+        // Write empty link (like base_link)
+        write_link(urdf, link, None, None);
+    }
 
     // Write joints and children
     if let Some(children) = assembly.children.get(&link_id) {
@@ -156,75 +162,79 @@ fn write_link_recursive(
     Ok(())
 }
 
-fn write_link(urdf: &mut String, link: &Link, part: &Part, mesh_uri: &str) {
+fn write_link(urdf: &mut String, link: &Link, part: Option<&Part>, mesh_uri: Option<&str>) {
     urdf.push_str(&format!("  <link name=\"{}\">\n", xml_escape(&link.name)));
 
-    // Inertial
-    urdf.push_str("    <inertial>\n");
-    urdf.push_str(&format!(
-        "      <origin xyz=\"{} {} {}\" rpy=\"{} {} {}\"/>\n",
-        link.inertial.origin.xyz[0],
-        link.inertial.origin.xyz[1],
-        link.inertial.origin.xyz[2],
-        link.inertial.origin.rpy[0],
-        link.inertial.origin.rpy[1],
-        link.inertial.origin.rpy[2]
-    ));
-    urdf.push_str(&format!(
-        "      <mass value=\"{}\"/>\n",
-        link.inertial.mass
-    ));
-    let inertia = &link.inertial.inertia;
-    urdf.push_str(&format!(
-        "      <inertia ixx=\"{}\" ixy=\"{}\" ixz=\"{}\" iyy=\"{}\" iyz=\"{}\" izz=\"{}\"/>\n",
-        inertia.ixx, inertia.ixy, inertia.ixz, inertia.iyy, inertia.iyz, inertia.izz
-    ));
-    urdf.push_str("    </inertial>\n");
+    // Only write full link content if we have a part/mesh
+    if let (Some(part), Some(mesh_uri)) = (part, mesh_uri) {
+        // Inertial
+        urdf.push_str("    <inertial>\n");
+        urdf.push_str(&format!(
+            "      <origin xyz=\"{} {} {}\" rpy=\"{} {} {}\"/>\n",
+            link.inertial.origin.xyz[0],
+            link.inertial.origin.xyz[1],
+            link.inertial.origin.xyz[2],
+            link.inertial.origin.rpy[0],
+            link.inertial.origin.rpy[1],
+            link.inertial.origin.rpy[2]
+        ));
+        urdf.push_str(&format!(
+            "      <mass value=\"{}\"/>\n",
+            link.inertial.mass
+        ));
+        let inertia = &link.inertial.inertia;
+        urdf.push_str(&format!(
+            "      <inertia ixx=\"{}\" ixy=\"{}\" ixz=\"{}\" iyy=\"{}\" iyz=\"{}\" izz=\"{}\"/>\n",
+            inertia.ixx, inertia.ixy, inertia.ixz, inertia.iyy, inertia.iyz, inertia.izz
+        ));
+        urdf.push_str("    </inertial>\n");
 
-    // Visual
-    urdf.push_str("    <visual>\n");
-    urdf.push_str(&format!(
-        "      <origin xyz=\"{} {} {}\" rpy=\"{} {} {}\"/>\n",
-        link.visual.origin.xyz[0],
-        link.visual.origin.xyz[1],
-        link.visual.origin.xyz[2],
-        link.visual.origin.rpy[0],
-        link.visual.origin.rpy[1],
-        link.visual.origin.rpy[2]
-    ));
-    urdf.push_str(&format!(
-        "      <geometry>\n        <mesh filename=\"{}\"/>\n      </geometry>\n",
-        xml_escape(mesh_uri)
-    ));
-    if let Some(ref material_name) = part.material_name {
+        // Visual
+        urdf.push_str("    <visual>\n");
         urdf.push_str(&format!(
-            "      <material name=\"{}\"/>\n",
-            xml_escape(material_name)
+            "      <origin xyz=\"{} {} {}\" rpy=\"{} {} {}\"/>\n",
+            link.visual.origin.xyz[0],
+            link.visual.origin.xyz[1],
+            link.visual.origin.xyz[2],
+            link.visual.origin.rpy[0],
+            link.visual.origin.rpy[1],
+            link.visual.origin.rpy[2]
         ));
-    } else {
         urdf.push_str(&format!(
-            "      <material name=\"\">\n        <color rgba=\"{} {} {} {}\"/>\n      </material>\n",
-            part.color[0], part.color[1], part.color[2], part.color[3]
+            "      <geometry>\n        <mesh filename=\"{}\"/>\n      </geometry>\n",
+            xml_escape(mesh_uri)
         ));
+        if let Some(ref material_name) = part.material_name {
+            urdf.push_str(&format!(
+                "      <material name=\"{}\"/>\n",
+                xml_escape(material_name)
+            ));
+        } else {
+            urdf.push_str(&format!(
+                "      <material name=\"\">\n        <color rgba=\"{} {} {} {}\"/>\n      </material>\n",
+                part.color[0], part.color[1], part.color[2], part.color[3]
+            ));
+        }
+        urdf.push_str("    </visual>\n");
+
+        // Collision
+        urdf.push_str("    <collision>\n");
+        urdf.push_str(&format!(
+            "      <origin xyz=\"{} {} {}\" rpy=\"{} {} {}\"/>\n",
+            link.collision.origin.xyz[0],
+            link.collision.origin.xyz[1],
+            link.collision.origin.xyz[2],
+            link.collision.origin.rpy[0],
+            link.collision.origin.rpy[1],
+            link.collision.origin.rpy[2]
+        ));
+        urdf.push_str(&format!(
+            "      <geometry>\n        <mesh filename=\"{}\"/>\n      </geometry>\n",
+            xml_escape(mesh_uri)
+        ));
+        urdf.push_str("    </collision>\n");
     }
-    urdf.push_str("    </visual>\n");
-
-    // Collision
-    urdf.push_str("    <collision>\n");
-    urdf.push_str(&format!(
-        "      <origin xyz=\"{} {} {}\" rpy=\"{} {} {}\"/>\n",
-        link.collision.origin.xyz[0],
-        link.collision.origin.xyz[1],
-        link.collision.origin.xyz[2],
-        link.collision.origin.rpy[0],
-        link.collision.origin.rpy[1],
-        link.collision.origin.rpy[2]
-    ));
-    urdf.push_str(&format!(
-        "      <geometry>\n        <mesh filename=\"{}\"/>\n      </geometry>\n",
-        xml_escape(mesh_uri)
-    ));
-    urdf.push_str("    </collision>\n");
+    // Empty links (like base_link) have no visual/collision/inertial
 
     urdf.push_str("  </link>\n\n");
 }

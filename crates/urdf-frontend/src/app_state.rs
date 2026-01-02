@@ -177,14 +177,16 @@ pub enum AppAction {
     ConnectParts { parent: Uuid, child: Uuid },
     /// Disconnect a part from its parent
     DisconnectPart { child: Uuid },
-    /// Export URDF
-    ExportUrdf(PathBuf),
+    /// Export URDF with path and robot name
+    ExportUrdf { path: PathBuf, robot_name: String },
     /// Save project
     SaveProject(Option<PathBuf>),
     /// Load project
     LoadProject(PathBuf),
     /// New project
     NewProject,
+    /// Connect a part to base_link
+    ConnectToBaseLink(Uuid),
 }
 
 pub type SharedAppState = Arc<Mutex<AppState>>;

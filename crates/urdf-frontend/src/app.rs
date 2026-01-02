@@ -214,11 +214,11 @@ impl UrdfEditorApp {
                         }
                     }
                 }
-                AppAction::ExportUrdf(path) => {
+                AppAction::ExportUrdf { path, robot_name } => {
                     let state = self.app_state.lock();
                     let options = urdf_core::ExportOptions {
                         output_dir: path,
-                        robot_name: state.project.name.clone(),
+                        robot_name,
                         mesh_prefix: "meshes".to_string(),
                         use_package_uri: false,
                     };
@@ -238,7 +238,7 @@ impl UrdfEditorApp {
                     // Helper to find or create a link for a part
                     let find_or_create_link = |state: &mut crate::app_state::AppState, part_id: uuid::Uuid| -> Option<uuid::Uuid> {
                         // Check if link already exists for this part
-                        if let Some((link_id, _)) = state.project.assembly.links.iter().find(|(_, l)| l.part_id == part_id) {
+                        if let Some((link_id, _)) = state.project.assembly.links.iter().find(|(_, l)| l.part_id == Some(part_id)) {
                             return Some(*link_id);
                         }
                         // Create new link
@@ -331,7 +331,7 @@ impl UrdfEditorApp {
 
                     // Find the link for this part
                     let child_link_id = state.project.assembly.links.iter()
-                        .find(|(_, l)| l.part_id == child)
+                        .find(|(_, l)| l.part_id == Some(child))
                         .map(|(id, _)| *id);
 
                     if let Some(link_id) = child_link_id {
@@ -342,6 +342,61 @@ impl UrdfEditorApp {
                             }
                             Err(e) => {
                                 tracing::error!("Failed to disconnect part: {}", e);
+                            }
+                        }
+                    }
+                }
+                AppAction::ConnectToBaseLink(part_id) => {
+                    let mut state = self.app_state.lock();
+
+                    // Get base_link id
+                    let base_link_id = state.project.assembly.root_link;
+
+                    if let Some(base_link_id) = base_link_id {
+                        // Find or create link for this part
+                        let child_link_id = state.project.assembly.links.iter()
+                            .find(|(_, l)| l.part_id == Some(part_id))
+                            .map(|(id, _)| *id);
+
+                        let child_link_id = if let Some(id) = child_link_id {
+                            // Disconnect from existing parent if any
+                            if state.project.assembly.parent.contains_key(&id) {
+                                let _ = state.project.assembly.disconnect(id);
+                            }
+                            id
+                        } else {
+                            // Create new link for this part
+                            if let Some(part) = state.parts.get(&part_id) {
+                                let link = Link::from_part(part);
+                                state.project.assembly.add_link(link)
+                            } else {
+                                return;
+                            }
+                        };
+
+                        // Get names for joint
+                        let base_name = state.project.assembly.links.get(&base_link_id)
+                            .map(|l| l.name.clone())
+                            .unwrap_or_else(|| "base_link".to_string());
+                        let child_name = state.project.assembly.links.get(&child_link_id)
+                            .map(|l| l.name.clone())
+                            .unwrap_or_default();
+
+                        // Create fixed joint
+                        let joint = Joint::fixed(
+                            format!("{}_to_{}", base_name, child_name),
+                            base_link_id,
+                            child_link_id,
+                            Pose::default(),
+                        );
+
+                        match state.project.assembly.connect(base_link_id, child_link_id, joint) {
+                            Ok(joint_id) => {
+                                tracing::info!("Connected {} to base_link via joint {}", child_name, joint_id);
+                                state.modified = true;
+                            }
+                            Err(e) => {
+                                tracing::error!("Failed to connect to base_link: {}", e);
                             }
                         }
                     }
@@ -432,8 +487,25 @@ impl eframe::App for UrdfEditorApp {
                         ui.close_menu();
                     }
                     if ui.button("Export URDF...").clicked() {
-                        if let Some(path) = rfd::FileDialog::new().pick_folder() {
-                            self.app_state.lock().queue_action(AppAction::ExportUrdf(path));
+                        let default_name = self.app_state.lock().project.name.clone();
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("URDF", &["urdf"])
+                            .set_file_name(format!("{}.urdf", default_name))
+                            .save_file()
+                        {
+                            // Extract robot name from file name (without extension)
+                            let robot_name = path.file_stem()
+                                .and_then(|s| s.to_str())
+                                .unwrap_or("robot")
+                                .to_string();
+                            // Use parent directory as output dir
+                            let output_dir = path.parent()
+                                .map(|p| p.to_path_buf())
+                                .unwrap_or_else(|| std::path::PathBuf::from("."));
+                            self.app_state.lock().queue_action(AppAction::ExportUrdf {
+                                path: output_dir,
+                                robot_name,
+                            });
                         }
                         ui.close_menu();
                     }

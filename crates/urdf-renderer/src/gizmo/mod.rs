@@ -1,14 +1,28 @@
 //! Transform gizmo renderer
+//!
+//! This module provides a 3D transform gizmo for manipulating objects
+//! in the viewport. Currently supports translation mode.
+
+mod collision;
+mod geometry;
+
+pub use collision::ray_cylinder_intersection;
+pub use geometry::GizmoVertex;
 
 use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Vec3};
 use wgpu::util::DeviceExt;
+
+use crate::constants::gizmo as constants;
+use geometry::generate_translation_gizmo;
 
 /// Gizmo mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum GizmoMode {
     #[default]
     Translate,
+    /// Rotation mode - planned for future implementation
+    #[allow(dead_code)]
     Rotate,
 }
 
@@ -49,7 +63,7 @@ pub struct GizmoInstance {
     pub transform: [[f32; 4]; 4],
     pub scale: f32,
     pub highlighted_axis: f32, // -1=none, 0=X, 1=Y, 2=Z
-    pub _padding: [f32; 2],
+    pub _pad: [f32; 2],
 }
 
 impl Default for GizmoInstance {
@@ -58,18 +72,9 @@ impl Default for GizmoInstance {
             transform: Mat4::IDENTITY.to_cols_array_2d(),
             scale: 1.0,
             highlighted_axis: -1.0,
-            _padding: [0.0; 2],
+            _pad: [0.0; 2],
         }
     }
-}
-
-/// Gizmo vertex
-#[repr(C)]
-#[derive(Debug, Clone, Copy, Pod, Zeroable)]
-struct GizmoVertex {
-    position: [f32; 3],
-    color: [f32; 4],
-    axis_id: u32,
 }
 
 /// Gizmo renderer
@@ -96,7 +101,7 @@ impl GizmoRenderer {
     ) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Gizmo Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/gizmo.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../shaders/gizmo.wgsl").into()),
         });
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -255,7 +260,11 @@ impl GizmoRenderer {
     }
 
     fn update_buffer(&self, queue: &wgpu::Queue) {
-        queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&[self.instance]));
+        queue.write_buffer(
+            &self.instance_buffer,
+            0,
+            bytemuck::cast_slice(&[self.instance]),
+        );
     }
 
     /// Show the gizmo at the given position
@@ -282,11 +291,17 @@ impl GizmoRenderer {
         render_pass.draw_indexed(0..self.index_count, 0, 0..1);
     }
 
-    /// Check if a ray intersects with a gizmo axis handle
-    /// Returns the closest intersecting axis
-    pub fn hit_test(&self, ray_origin: Vec3, ray_dir: Vec3, gizmo_pos: Vec3, scale: f32) -> GizmoAxis {
-        let handle_radius = 0.08 * scale;
-        let handle_length = 1.0 * scale;
+    /// Check if a ray intersects with a gizmo axis handle.
+    /// Returns the closest intersecting axis.
+    pub fn hit_test(
+        &self,
+        ray_origin: Vec3,
+        ray_dir: Vec3,
+        gizmo_pos: Vec3,
+        scale: f32,
+    ) -> GizmoAxis {
+        let handle_radius = constants::HIT_RADIUS_MULTIPLIER * scale;
+        let handle_length = constants::ARROW_LENGTH * scale;
 
         let mut closest_axis = GizmoAxis::None;
         let mut closest_dist = f32::MAX;
@@ -300,7 +315,7 @@ impl GizmoRenderer {
             let axis_start = gizmo_pos;
             let axis_end = gizmo_pos + dir * handle_length;
 
-            if let Some(dist) = ray_cylinder_intersection(
+            if let Some(dist) = collision::ray_cylinder_intersection(
                 ray_origin,
                 ray_dir,
                 axis_start,
@@ -316,157 +331,4 @@ impl GizmoRenderer {
 
         closest_axis
     }
-}
-
-/// Generate translation gizmo geometry (3 arrows)
-fn generate_translation_gizmo() -> (Vec<GizmoVertex>, Vec<u32>) {
-    let mut vertices = Vec::new();
-    let mut indices = Vec::new();
-
-    let arrow_length = 1.0f32;
-    let shaft_radius = 0.02f32;
-    let head_radius = 0.06f32;
-    let head_length = 0.15f32;
-    let segments = 8u32;
-
-    // Generate arrow for each axis
-    for (axis_id, (color, direction)) in [
-        ([1.0, 0.2, 0.2, 1.0], Vec3::X), // X = Red
-        ([0.2, 1.0, 0.2, 1.0], Vec3::Y), // Y = Green
-        ([0.2, 0.2, 1.0, 1.0], Vec3::Z), // Z = Blue
-    ]
-    .iter()
-    .enumerate()
-    {
-        let base_index = vertices.len() as u32;
-
-        // Create rotation to align arrow with axis direction
-        let rotation = if *direction == Vec3::X {
-            Mat4::from_rotation_z(-std::f32::consts::FRAC_PI_2)
-        } else if *direction == Vec3::Z {
-            Mat4::from_rotation_x(std::f32::consts::FRAC_PI_2)
-        } else {
-            Mat4::IDENTITY
-        };
-
-        // Shaft cylinder
-        let shaft_end = arrow_length - head_length;
-        for i in 0..=segments {
-            let angle = (i as f32 / segments as f32) * std::f32::consts::TAU;
-            let x = angle.cos() * shaft_radius;
-            let z = angle.sin() * shaft_radius;
-
-            // Bottom of shaft
-            let pos_bottom = rotation.transform_point3(Vec3::new(x, 0.0, z));
-            vertices.push(GizmoVertex {
-                position: pos_bottom.into(),
-                color: *color,
-                axis_id: axis_id as u32,
-            });
-
-            // Top of shaft
-            let pos_top = rotation.transform_point3(Vec3::new(x, shaft_end, z));
-            vertices.push(GizmoVertex {
-                position: pos_top.into(),
-                color: *color,
-                axis_id: axis_id as u32,
-            });
-        }
-
-        // Shaft indices
-        for i in 0..segments {
-            let i0 = base_index + i * 2;
-            let i1 = base_index + i * 2 + 1;
-            let i2 = base_index + (i + 1) * 2;
-            let i3 = base_index + (i + 1) * 2 + 1;
-            indices.extend_from_slice(&[i0, i2, i1, i1, i2, i3]);
-        }
-
-        // Cone head
-        let cone_base_index = vertices.len() as u32;
-
-        // Cone tip
-        let tip_pos = rotation.transform_point3(Vec3::new(0.0, arrow_length, 0.0));
-        vertices.push(GizmoVertex {
-            position: tip_pos.into(),
-            color: *color,
-            axis_id: axis_id as u32,
-        });
-
-        // Cone base vertices
-        for i in 0..=segments {
-            let angle = (i as f32 / segments as f32) * std::f32::consts::TAU;
-            let x = angle.cos() * head_radius;
-            let z = angle.sin() * head_radius;
-            let pos = rotation.transform_point3(Vec3::new(x, shaft_end, z));
-            vertices.push(GizmoVertex {
-                position: pos.into(),
-                color: *color,
-                axis_id: axis_id as u32,
-            });
-        }
-
-        // Cone side indices
-        let tip_index = cone_base_index;
-        for i in 0..segments {
-            let i0 = cone_base_index + 1 + i;
-            let i1 = cone_base_index + 1 + (i + 1);
-            indices.extend_from_slice(&[tip_index, i1, i0]);
-        }
-
-        // Cone base cap (center point + ring)
-        let center_index = vertices.len() as u32;
-        let center_pos = rotation.transform_point3(Vec3::new(0.0, shaft_end, 0.0));
-        vertices.push(GizmoVertex {
-            position: center_pos.into(),
-            color: *color,
-            axis_id: axis_id as u32,
-        });
-
-        for i in 0..segments {
-            let i0 = cone_base_index + 1 + i;
-            let i1 = cone_base_index + 1 + (i + 1);
-            indices.extend_from_slice(&[center_index, i0, i1]);
-        }
-    }
-
-    (vertices, indices)
-}
-
-/// Ray-cylinder intersection test
-fn ray_cylinder_intersection(
-    ray_origin: Vec3,
-    ray_dir: Vec3,
-    cylinder_start: Vec3,
-    cylinder_end: Vec3,
-    radius: f32,
-) -> Option<f32> {
-    let cylinder_axis = (cylinder_end - cylinder_start).normalize();
-    let cylinder_length = (cylinder_end - cylinder_start).length();
-
-    let d = ray_dir - cylinder_axis * ray_dir.dot(cylinder_axis);
-    let o = (ray_origin - cylinder_start) - cylinder_axis * (ray_origin - cylinder_start).dot(cylinder_axis);
-
-    let a = d.dot(d);
-    let b = 2.0 * d.dot(o);
-    let c = o.dot(o) - radius * radius;
-
-    let discriminant = b * b - 4.0 * a * c;
-    if discriminant < 0.0 {
-        return None;
-    }
-
-    let t = (-b - discriminant.sqrt()) / (2.0 * a);
-    if t < 0.0 {
-        return None;
-    }
-
-    // Check if hit point is within cylinder length
-    let hit_point = ray_origin + ray_dir * t;
-    let projection = (hit_point - cylinder_start).dot(cylinder_axis);
-    if projection < 0.0 || projection > cylinder_length {
-        return None;
-    }
-
-    Some(t)
 }

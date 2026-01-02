@@ -74,7 +74,7 @@ pub fn render_camera_settings(
                     ui.horizontal(|ui| {
                         ui.label("FOV");
                         ui.add_space(ui.available_width() - 100.0);
-                        let mut fov = vp.renderer.camera.fov_degrees();
+                        let mut fov = vp.renderer.camera().fov_degrees();
                         if ui
                             .add(
                                 egui::Slider::new(&mut fov, 10.0..=120.0)
@@ -84,7 +84,7 @@ pub fn render_camera_settings(
                             )
                             .changed()
                         {
-                            vp.renderer.camera.set_fov_degrees(fov);
+                            vp.renderer.camera_mut().set_fov_degrees(fov);
                         }
                     });
 
@@ -92,7 +92,7 @@ pub fn render_camera_settings(
                     ui.horizontal(|ui| {
                         ui.label("Near");
                         ui.add_space(ui.available_width() - 100.0);
-                        let mut near = vp.renderer.camera.near;
+                        let mut near = vp.renderer.camera().near;
                         if ui
                             .add(
                                 egui::DragValue::new(&mut near)
@@ -102,7 +102,7 @@ pub fn render_camera_settings(
                             )
                             .changed()
                         {
-                            vp.renderer.camera.set_near(near);
+                            vp.renderer.camera_mut().set_near(near);
                         }
                     });
 
@@ -110,7 +110,7 @@ pub fn render_camera_settings(
                     ui.horizontal(|ui| {
                         ui.label("Far");
                         ui.add_space(ui.available_width() - 100.0);
-                        let mut far = vp.renderer.camera.far;
+                        let mut far = vp.renderer.camera().far;
                         if ui
                             .add(
                                 egui::DragValue::new(&mut far)
@@ -120,7 +120,7 @@ pub fn render_camera_settings(
                             )
                             .changed()
                         {
-                            vp.renderer.camera.set_far(far);
+                            vp.renderer.camera_mut().set_far(far);
                         }
                     });
 
@@ -130,7 +130,7 @@ pub fn render_camera_settings(
                     ui.horizontal(|ui| {
                         ui.label("Distance");
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.label(format!("{:.2} m", vp.renderer.camera.distance));
+                            ui.label(format!("{:.2} m", vp.renderer.camera().distance));
                         });
                     });
                 });

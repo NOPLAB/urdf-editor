@@ -334,6 +334,18 @@ pub fn import_urdf(urdf_path: &Path, options: &ImportOptions) -> Result<Project,
     // Update world transforms
     assembly.update_world_transforms();
 
+    // Apply link world transforms to parts
+    // Final transform = link.world_transform * visual_origin
+    for link in assembly.links.values() {
+        if let Some(part_id) = link.part_id {
+            if let Some(part) = parts.iter_mut().find(|p| p.id == part_id) {
+                // part.origin_transform already contains visual origin
+                // Prepend link's world transform
+                part.origin_transform = link.world_transform * part.origin_transform;
+            }
+        }
+    }
+
     // Create project
     let project = Project {
         version: 1,
@@ -368,7 +380,7 @@ fn process_visual_geometry(
     let origin = convert_pose(&first_visual.origin);
 
     // Create part from first visual's geometry
-    let part = process_geometry(
+    let mut part = process_geometry(
         &first_visual.geometry,
         link_name,
         base_dir,
@@ -377,6 +389,11 @@ fn process_visual_geometry(
         color,
         material_name.clone(),
     )?;
+
+    // Apply visual origin to part's origin_transform
+    if let Some(ref mut p) = part {
+        p.origin_transform = origin.to_mat4();
+    }
 
     // Process additional visual elements (if any)
     let mut additional_elements = Vec::new();

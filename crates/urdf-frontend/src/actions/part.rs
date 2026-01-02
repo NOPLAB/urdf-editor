@@ -66,7 +66,7 @@ fn handle_create_primitive(
         // Fit camera if this is the first part
         let center = part.center();
         let radius = part.size().length() / 2.0;
-        vp.renderer.camera.fit_all(center, radius.max(0.5));
+        vp.renderer.camera_mut().fit_all(center, radius.max(0.5));
     }
 
     // Add to app state

@@ -138,7 +138,7 @@ impl ViewportState {
     }
 
     /// Add a part to the viewport
-    pub fn add_part(&mut self, part: &Part) -> usize {
+    pub fn add_part(&mut self, part: &Part) -> Uuid {
         self.renderer.add_part(&self.device, part)
     }
 
@@ -173,7 +173,7 @@ impl ViewportState {
         let instance = AxisInstance {
             transform: part.origin_transform.to_cols_array_2d(),
             scale: 0.3,
-            _padding: [0.0; 3],
+            _pad: [0.0; 3],
         };
         self.renderer.update_axes(&self.queue, &[instance]);
     }
@@ -285,7 +285,7 @@ impl ViewportState {
 
         let (ray_origin, ray_dir) = self
             .renderer
-            .camera
+            .camera()
             .screen_to_ray(screen_x, screen_y, width, height);
         self.renderer.gizmo_hit_test(
             ray_origin,
@@ -310,7 +310,7 @@ impl ViewportState {
 
         let (ray_origin, ray_dir) = self
             .renderer
-            .camera
+            .camera()
             .screen_to_ray(screen_x, screen_y, width, height);
 
         // Calculate intersection point with the axis plane
@@ -340,7 +340,7 @@ impl ViewportState {
 
         let (ray_origin, ray_dir) = self
             .renderer
-            .camera
+            .camera()
             .screen_to_ray(screen_x, screen_y, width, height);
         let plane_normal = self.get_drag_plane_normal(self.gizmo.drag_axis);
 
@@ -376,8 +376,8 @@ impl ViewportState {
 
     /// Get the plane normal for dragging on an axis
     fn get_drag_plane_normal(&self, axis: GizmoAxis) -> Vec3 {
-        let camera_forward =
-            (self.renderer.camera.target - self.renderer.camera.position).normalize();
+        let camera = self.renderer.camera();
+        let camera_forward = (camera.target - camera.position).normalize();
 
         match axis {
             GizmoAxis::X => {

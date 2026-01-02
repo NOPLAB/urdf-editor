@@ -51,7 +51,7 @@ fn handle_import_stl(path: std::path::PathBuf, ctx: &ActionContext) {
                 let mut vp = viewport_state.lock();
                 vp.add_part(&part);
                 // Auto-fit camera to new part
-                vp.renderer.camera.fit_all(center, radius);
+                vp.renderer.camera_mut().fit_all(center, radius);
                 tracing::info!(
                     "Part added, camera fitted to center={:?}, radius={}",
                     center,
@@ -128,7 +128,7 @@ fn handle_import_urdf(path: std::path::PathBuf, ctx: &ActionContext) {
                     viewport_state
                         .lock()
                         .renderer
-                        .camera
+                        .camera_mut()
                         .fit_all(total_center, max_radius * 2.0);
                 }
             }

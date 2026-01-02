@@ -356,7 +356,7 @@ impl Panel for PartListPanel {
             .unwrap_or_else(|| "base_link".to_string());
 
         // Build tree structure from Assembly
-        let (root_parts, children_map, parts_with_parent, orphaned_parts) =
+        let (root_link_part, root_parts, children_map, parts_with_parent, orphaned_parts) =
             build_tree_structure(&state);
 
         // Collect part names for display
@@ -385,8 +385,22 @@ impl Panel for PartListPanel {
             // Render base_link node (renameable, drop target)
             self.render_base_link(ui, &base_link_name, app_state);
 
+            // Render root link's own part (if it has one, e.g., when importing URDF)
+            if let Some(root_part_id) = root_link_part {
+                self.render_part_tree(
+                    ui,
+                    root_part_id,
+                    &part_names,
+                    &children_map,
+                    &parts_with_parent,
+                    selected_id,
+                    2,
+                    &mut actions,
+                );
+            }
+
             // Render connected parts (tree structure) under base_link
-            // These are children of base_link in the assembly
+            // These are children of root_link in the assembly
             for root_id in &root_parts {
                 self.render_part_tree(
                     ui,

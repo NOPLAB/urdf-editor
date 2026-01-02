@@ -17,13 +17,15 @@ pub enum TreeAction {
 /// Build tree structure from Assembly state
 ///
 /// Returns:
-/// - root_parts: Parts that are direct children of base_link
+/// - root_link_part: Part belonging to the root link (if any)
+/// - root_parts: Parts that are direct children of root_link
 /// - children_map: Map of part_id -> child part_ids
 /// - parts_with_parent: Set of parts that have a parent
-/// - orphaned_parts: Parts not connected to base_link hierarchy
+/// - orphaned_parts: Parts not connected to root_link hierarchy
 pub fn build_tree_structure(
     state: &AppState,
 ) -> (
+    Option<Uuid>,
     Vec<Uuid>,
     HashMap<Uuid, Vec<Uuid>>,
     HashSet<Uuid>,
@@ -81,10 +83,21 @@ pub fn build_tree_structure(
     }
 
     // Find orphaned parts (not connected to base_link hierarchy)
+    // Note: root_link itself is not orphaned even though it has no parent
+    let root_link_part_id: Option<Uuid> = assembly
+        .root_link
+        .and_then(|root_id| assembly.links.get(&root_id))
+        .and_then(|link| link.part_id);
+
     let orphaned_parts: Vec<Uuid> = state
         .parts
         .keys()
         .filter(|part_id| {
+            // Root link's part is not orphaned
+            if Some(**part_id) == root_link_part_id {
+                return false;
+            }
+
             if let Some(&link_id) = part_to_link.get(part_id) {
                 // Part has a link - check if it's disconnected (no parent)
                 !assembly.parent.contains_key(&link_id)
@@ -96,7 +109,7 @@ pub fn build_tree_structure(
         .copied()
         .collect();
 
-    (root_parts, children_map, parts_with_parent, orphaned_parts)
+    (root_link_part_id, root_parts, children_map, parts_with_parent, orphaned_parts)
 }
 
 /// Check if connecting parent to child would be valid (no cycle)

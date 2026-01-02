@@ -71,28 +71,37 @@ impl Panel for ViewportPanel {
         ui.horizontal(|ui| {
             ui.label("View:");
             if ui.button("Top").clicked() {
-                viewport_state.lock().renderer.camera.set_top_view();
+                viewport_state.lock().renderer.camera_mut().set_top_view();
             }
             if ui.button("Front").clicked() {
-                viewport_state.lock().renderer.camera.set_front_view();
+                viewport_state.lock().renderer.camera_mut().set_front_view();
             }
             if ui.button("Side").clicked() {
-                viewport_state.lock().renderer.camera.set_side_view();
+                viewport_state.lock().renderer.camera_mut().set_side_view();
             }
             if ui.button("Fit All").clicked() {
                 viewport_state
                     .lock()
                     .renderer
-                    .camera
+                    .camera_mut()
                     .fit_all(Vec3::ZERO, 2.0);
             }
 
             ui.separator();
 
             let mut state = viewport_state.lock();
-            ui.checkbox(&mut state.renderer.show_grid, "Grid");
-            ui.checkbox(&mut state.renderer.show_axes, "Axes");
-            ui.checkbox(&mut state.renderer.show_markers, "Markers");
+            let mut show_grid = state.renderer.show_grid();
+            let mut show_axes = state.renderer.show_axes();
+            let mut show_markers = state.renderer.show_markers();
+            if ui.checkbox(&mut show_grid, "Grid").changed() {
+                state.renderer.set_show_grid(show_grid);
+            }
+            if ui.checkbox(&mut show_axes, "Axes").changed() {
+                state.renderer.set_show_axes(show_axes);
+            }
+            if ui.checkbox(&mut show_markers, "Markers").changed() {
+                state.renderer.set_show_markers(show_markers);
+            }
         });
 
         // Main viewport area
@@ -220,13 +229,13 @@ impl Panel for ViewportPanel {
             let delta = response.drag_delta();
             if ui.input(|i| i.modifiers.shift) {
                 // Pan
-                vp_state.renderer.camera.pan(delta.x, delta.y);
+                vp_state.renderer.camera_mut().pan(delta.x, delta.y);
             } else {
                 // Orbit
                 let sensitivity = 0.005;
                 vp_state
                     .renderer
-                    .camera
+                    .camera_mut()
                     .orbit(-delta.x * sensitivity, delta.y * sensitivity);
             }
         }
@@ -237,7 +246,7 @@ impl Panel for ViewportPanel {
             let sensitivity = 0.005;
             vp_state
                 .renderer
-                .camera
+                .camera_mut()
                 .orbit(-delta.x * sensitivity, delta.y * sensitivity);
         }
 
@@ -245,34 +254,34 @@ impl Panel for ViewportPanel {
         if response.hovered() {
             let scroll_delta = ui.input(|i| i.smooth_scroll_delta.y);
             if scroll_delta != 0.0 {
-                vp_state.renderer.camera.zoom(scroll_delta * 0.01);
+                vp_state.renderer.camera_mut().zoom(scroll_delta * 0.01);
             }
         }
 
         // Context menu
         response.context_menu(|ui| {
             if ui.button("Reset View").clicked() {
-                vp_state.renderer.camera.fit_all(Vec3::ZERO, 2.0);
+                vp_state.renderer.camera_mut().fit_all(Vec3::ZERO, 2.0);
                 ui.close_menu();
             }
             ui.separator();
             if ui.button("Top View").clicked() {
-                vp_state.renderer.camera.set_top_view();
+                vp_state.renderer.camera_mut().set_top_view();
                 ui.close_menu();
             }
             if ui.button("Front View").clicked() {
-                vp_state.renderer.camera.set_front_view();
+                vp_state.renderer.camera_mut().set_front_view();
                 ui.close_menu();
             }
             if ui.button("Side View").clicked() {
-                vp_state.renderer.camera.set_side_view();
+                vp_state.renderer.camera_mut().set_side_view();
                 ui.close_menu();
             }
         });
 
         // Get camera state for axes indicator
-        let yaw = vp_state.renderer.camera.yaw;
-        let pitch = vp_state.renderer.camera.pitch;
+        let yaw = vp_state.renderer.camera().yaw;
+        let pitch = vp_state.renderer.camera().pitch;
         drop(vp_state);
 
         // Draw axes indicator overlay

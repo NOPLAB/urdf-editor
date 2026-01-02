@@ -2,10 +2,11 @@
 
 use bytemuck::{Pod, Zeroable};
 use glam::Mat4;
-use tracing;
 use wgpu::util::DeviceExt;
 
 use urdf_core::Part;
+
+use crate::pipeline::create_camera_bind_group;
 
 /// Vertex for mesh rendering
 #[repr(C)]
@@ -16,6 +17,34 @@ pub struct MeshVertex {
     pub color: [f32; 4],
 }
 
+impl MeshVertex {
+    pub const ATTRIBUTES: &'static [wgpu::VertexAttribute] = &[
+        wgpu::VertexAttribute {
+            offset: 0,
+            shader_location: 0,
+            format: wgpu::VertexFormat::Float32x3,
+        },
+        wgpu::VertexAttribute {
+            offset: std::mem::size_of::<[f32; 3]>() as u64,
+            shader_location: 1,
+            format: wgpu::VertexFormat::Float32x3,
+        },
+        wgpu::VertexAttribute {
+            offset: (std::mem::size_of::<[f32; 3]>() * 2) as u64,
+            shader_location: 2,
+            format: wgpu::VertexFormat::Float32x4,
+        },
+    ];
+
+    pub fn layout() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<Self>() as u64,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: Self::ATTRIBUTES,
+        }
+    }
+}
+
 /// Mesh instance transform
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
@@ -23,7 +52,7 @@ pub struct MeshInstance {
     pub model: [[f32; 4]; 4],
     pub color: [f32; 4],
     pub selected: u32,
-    pub _padding: [u32; 3],
+    pub _pad: [u32; 3],
 }
 
 impl Default for MeshInstance {
@@ -32,7 +61,7 @@ impl Default for MeshInstance {
             model: Mat4::IDENTITY.to_cols_array_2d(),
             color: [0.7, 0.7, 0.7, 1.0],
             selected: 0,
-            _padding: [0; 3],
+            _pad: [0; 3],
         }
     }
 }
@@ -106,7 +135,7 @@ impl MeshData {
             model: part.origin_transform.to_cols_array_2d(),
             color: part.color,
             selected: 0,
-            _padding: [0; 3],
+            _pad: [0; 3],
         };
 
         let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -163,15 +192,10 @@ impl MeshRenderer {
             source: wgpu::ShaderSource::Wgsl(include_str!("shaders/mesh.wgsl").into()),
         });
 
-        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Mesh Camera Bind Group"),
-            layout: camera_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: camera_buffer.as_entire_binding(),
-            }],
-        });
+        let camera_bind_group =
+            create_camera_bind_group(device, camera_bind_group_layout, camera_buffer, "Mesh");
 
+        // Per-mesh instance bind group layout (for transform/color/selection)
         let instance_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("Mesh Instance Bind Group Layout"),
@@ -199,27 +223,7 @@ impl MeshRenderer {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
-                buffers: &[wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<MeshVertex>() as u64,
-                    step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &[
-                        wgpu::VertexAttribute {
-                            offset: 0,
-                            shader_location: 0,
-                            format: wgpu::VertexFormat::Float32x3,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 12,
-                            shader_location: 1,
-                            format: wgpu::VertexFormat::Float32x3,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 24,
-                            shader_location: 2,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                    ],
-                }],
+                buffers: &[MeshVertex::layout()],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {

@@ -4,6 +4,11 @@ use bytemuck::{Pod, Zeroable};
 use glam::Vec3;
 use wgpu::util::DeviceExt;
 
+use crate::constants::{instances, marker as constants};
+use crate::instanced::InstanceBuffer;
+use crate::pipeline::{create_camera_bind_group, PipelineConfig};
+use crate::vertex::PositionVertex;
+
 /// Marker instance data - passed as vertex instance
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
@@ -23,21 +28,27 @@ impl MarkerInstance {
     }
 }
 
+impl Default for MarkerInstance {
+    fn default() -> Self {
+        Self {
+            position: [0.0; 3],
+            radius: 0.02,
+            color: [1.0, 1.0, 1.0, 1.0],
+        }
+    }
+}
+
 /// Marker renderer for joint points
 pub struct MarkerRenderer {
     pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     index_count: u32,
-    instance_buffer: wgpu::Buffer,
-    instance_count: u32,
-    max_instances: u32,
+    instances: InstanceBuffer<MarkerInstance>,
     bind_group: wgpu::BindGroup,
 }
 
 impl MarkerRenderer {
-    const MAX_INSTANCES: u32 = 256;
-
     pub fn new(
         device: &wgpu::Device,
         format: wgpu::TextureFormat,
@@ -45,94 +56,40 @@ impl MarkerRenderer {
         camera_bind_group_layout: &wgpu::BindGroupLayout,
         camera_buffer: &wgpu::Buffer,
     ) -> Self {
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Marker Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/marker.wgsl").into()),
-        });
+        let bind_group =
+            create_camera_bind_group(device, camera_bind_group_layout, camera_buffer, "Marker");
 
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Marker Camera Bind Group"),
-            layout: camera_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: camera_buffer.as_entire_binding(),
-            }],
-        });
+        // Instance buffer layout: position+radius (Float32x4) + color (Float32x4)
+        let instance_layout = wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<MarkerInstance>() as u64,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    offset: 16,
+                    shader_location: 2,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+            ],
+        };
 
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Marker Pipeline Layout"),
-            bind_group_layouts: &[camera_bind_group_layout],
-            push_constant_ranges: &[],
-        });
-
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Marker Pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[
-                    // Vertex buffer
-                    wgpu::VertexBufferLayout {
-                        array_stride: 12, // vec3
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                        attributes: &[wgpu::VertexAttribute {
-                            offset: 0,
-                            shader_location: 0,
-                            format: wgpu::VertexFormat::Float32x3,
-                        }],
-                    },
-                    // Instance buffer
-                    wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<MarkerInstance>() as u64,
-                        step_mode: wgpu::VertexStepMode::Instance,
-                        attributes: &[
-                            // position + radius
-                            wgpu::VertexAttribute {
-                                offset: 0,
-                                shader_location: 1,
-                                format: wgpu::VertexFormat::Float32x4,
-                            },
-                            // color
-                            wgpu::VertexAttribute {
-                                offset: 16,
-                                shader_location: 2,
-                                format: wgpu::VertexFormat::Float32x4,
-                            },
-                        ],
-                    },
-                ],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                cull_mode: Some(wgpu::Face::Back),
-                ..Default::default()
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: depth_format,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less,
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-            cache: None,
-        });
+        let pipeline = PipelineConfig::new(
+            "Marker",
+            include_str!("shaders/marker.wgsl"),
+            format,
+            depth_format,
+            &[camera_bind_group_layout],
+        )
+        .with_vertex_layouts(vec![PositionVertex::layout(), instance_layout])
+        .with_cull_mode(Some(wgpu::Face::Back))
+        .build(device);
 
         // Generate sphere mesh
-        let (vertices, indices) = generate_sphere(16, 12);
+        let (vertices, indices) = generate_sphere(constants::SEGMENTS, constants::RINGS);
         let index_count = indices.len() as u32;
 
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -147,55 +104,44 @@ impl MarkerRenderer {
             usage: wgpu::BufferUsages::INDEX,
         });
 
-        let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Marker Instance Buffer"),
-            size: (Self::MAX_INSTANCES as usize * std::mem::size_of::<MarkerInstance>()) as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
+        let instances = InstanceBuffer::new(device, "Marker", instances::MAX_MARKERS);
 
         Self {
             pipeline,
             vertex_buffer,
             index_buffer,
             index_count,
-            instance_buffer,
-            instance_count: 0,
-            max_instances: Self::MAX_INSTANCES,
+            instances,
             bind_group,
         }
     }
 
     /// Update marker instances
     pub fn update_instances(&mut self, queue: &wgpu::Queue, instances: &[MarkerInstance]) {
-        let count = instances.len().min(self.max_instances as usize);
-        self.instance_count = count as u32;
-        if count > 0 {
-            queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&instances[..count]));
-        }
+        self.instances.update(queue, instances);
     }
 
     /// Clear all markers
     pub fn clear(&mut self) {
-        self.instance_count = 0;
+        self.instances.clear();
     }
 
     pub fn render<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>) {
-        if self.instance_count == 0 {
+        if self.instances.is_empty() {
             return;
         }
 
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_bind_group(0, &self.bind_group, &[]);
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+        render_pass.set_vertex_buffer(1, self.instances.slice());
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-        render_pass.draw_indexed(0..self.index_count, 0, 0..self.instance_count);
+        render_pass.draw_indexed(0..self.index_count, 0, 0..self.instances.count());
     }
 }
 
 /// Generate a unit sphere mesh
-fn generate_sphere(segments: u32, rings: u32) -> (Vec<[f32; 3]>, Vec<u32>) {
+fn generate_sphere(segments: u32, rings: u32) -> (Vec<PositionVertex>, Vec<u32>) {
     let mut vertices = Vec::new();
     let mut indices = Vec::new();
 
@@ -209,7 +155,9 @@ fn generate_sphere(segments: u32, rings: u32) -> (Vec<[f32; 3]>, Vec<u32>) {
             let x = ring_radius * theta.cos();
             let z = ring_radius * theta.sin();
 
-            vertices.push([x, y, z]);
+            vertices.push(PositionVertex {
+                position: [x, y, z],
+            });
         }
     }
 

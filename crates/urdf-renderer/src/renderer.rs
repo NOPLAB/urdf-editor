@@ -10,6 +10,7 @@ use urdf_core::Part;
 
 use crate::axis::{AxisInstance, AxisRenderer};
 use crate::camera::Camera;
+use crate::constants::viewport::CLEAR_COLOR;
 use crate::gizmo::{GizmoAxis, GizmoRenderer};
 use crate::grid::GridRenderer;
 use crate::marker::{MarkerInstance, MarkerRenderer};
@@ -19,12 +20,11 @@ use crate::mesh::{MeshData, MeshRenderer};
 pub struct MeshEntry {
     pub data: MeshData,
     pub bind_group: wgpu::BindGroup,
-    pub part_id: Uuid,
 }
 
 /// Main renderer
 pub struct Renderer {
-    pub camera: Camera,
+    camera: Camera,
     camera_buffer: wgpu::Buffer,
     camera_bind_group_layout: wgpu::BindGroupLayout,
     depth_texture: wgpu::Texture,
@@ -35,18 +35,17 @@ pub struct Renderer {
     mesh_renderer: MeshRenderer,
     axis_renderer: AxisRenderer,
     marker_renderer: MarkerRenderer,
-    pub gizmo_renderer: GizmoRenderer,
+    gizmo_renderer: GizmoRenderer,
 
-    // Data
-    meshes: Vec<MeshEntry>,
-    part_to_mesh: HashMap<Uuid, usize>,
+    // Data - UUID-keyed storage for O(1) lookup and removal
+    meshes: HashMap<Uuid, MeshEntry>,
+    selected_part: Option<Uuid>,
 
     // Display options
-    pub show_grid: bool,
-    pub show_axes: bool,
-    pub show_markers: bool,
-    pub show_gizmo: bool,
-    selected_mesh: Option<usize>,
+    show_grid: bool,
+    show_axes: bool,
+    show_markers: bool,
+    show_gizmo: bool,
 
     format: wgpu::TextureFormat,
     width: u32,
@@ -134,17 +133,82 @@ impl Renderer {
             axis_renderer,
             marker_renderer,
             gizmo_renderer,
-            meshes: Vec::new(),
-            part_to_mesh: HashMap::new(),
+            meshes: HashMap::new(),
+            selected_part: None,
             show_grid: true,
             show_axes: true,
             show_markers: true,
             show_gizmo: true,
-            selected_mesh: None,
             format,
             width,
             height,
         }
+    }
+
+    // ========== Camera accessors ==========
+
+    /// Get a reference to the camera.
+    pub fn camera(&self) -> &Camera {
+        &self.camera
+    }
+
+    /// Get a mutable reference to the camera.
+    pub fn camera_mut(&mut self) -> &mut Camera {
+        &mut self.camera
+    }
+
+    // ========== Display option accessors ==========
+
+    /// Get whether the grid is visible.
+    pub fn show_grid(&self) -> bool {
+        self.show_grid
+    }
+
+    /// Set whether the grid is visible.
+    pub fn set_show_grid(&mut self, show: bool) {
+        self.show_grid = show;
+    }
+
+    /// Get whether axes are visible.
+    pub fn show_axes(&self) -> bool {
+        self.show_axes
+    }
+
+    /// Set whether axes are visible.
+    pub fn set_show_axes(&mut self, show: bool) {
+        self.show_axes = show;
+    }
+
+    /// Get whether markers are visible.
+    pub fn show_markers(&self) -> bool {
+        self.show_markers
+    }
+
+    /// Set whether markers are visible.
+    pub fn set_show_markers(&mut self, show: bool) {
+        self.show_markers = show;
+    }
+
+    /// Get whether the gizmo rendering is enabled.
+    pub fn is_gizmo_enabled(&self) -> bool {
+        self.show_gizmo
+    }
+
+    /// Set whether the gizmo rendering is enabled.
+    pub fn set_gizmo_enabled(&mut self, enabled: bool) {
+        self.show_gizmo = enabled;
+    }
+
+    // ========== Gizmo delegate methods ==========
+
+    /// Get gizmo visibility state.
+    pub fn gizmo_visible(&self) -> bool {
+        self.gizmo_renderer.visible
+    }
+
+    /// Get gizmo highlighted axis.
+    pub fn gizmo_highlighted_axis(&self) -> GizmoAxis {
+        self.gizmo_renderer.highlighted_axis
     }
 
     fn create_depth_texture(
@@ -191,84 +255,78 @@ impl Renderer {
         queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[camera_uniform]));
     }
 
-    /// Add a part to the renderer
-    pub fn add_part(&mut self, device: &wgpu::Device, part: &Part) -> usize {
+    /// Add a part to the renderer.
+    ///
+    /// Returns the part's UUID for reference.
+    pub fn add_part(&mut self, device: &wgpu::Device, part: &Part) -> Uuid {
         tracing::info!("Renderer::add_part called for '{}'", part.name);
         let data = MeshData::from_part(device, part);
         let bind_group = self.mesh_renderer.create_instance_bind_group(device, &data);
 
-        let idx = self.meshes.len();
-        self.meshes.push(MeshEntry {
-            data,
-            bind_group,
-            part_id: part.id,
-        });
-        self.part_to_mesh.insert(part.id, idx);
+        self.meshes.insert(part.id, MeshEntry { data, bind_group });
         tracing::info!("Renderer now has {} meshes", self.meshes.len());
-        idx
+        part.id
     }
 
-    /// Update a part's transform
+    /// Update a part's transform.
     pub fn update_part_transform(&mut self, queue: &wgpu::Queue, part_id: Uuid, transform: Mat4) {
-        if let Some(&idx) = self.part_to_mesh.get(&part_id) {
-            if let Some(entry) = self.meshes.get_mut(idx) {
-                entry.data.update_transform(queue, transform);
-            }
+        if let Some(entry) = self.meshes.get_mut(&part_id) {
+            entry.data.update_transform(queue, transform);
         }
     }
 
-    /// Update a part's color
+    /// Update a part's color.
     pub fn update_part_color(&mut self, queue: &wgpu::Queue, part_id: Uuid, color: [f32; 4]) {
-        if let Some(&idx) = self.part_to_mesh.get(&part_id) {
-            if let Some(entry) = self.meshes.get_mut(idx) {
-                entry.data.update_color(queue, color);
-            }
+        if let Some(entry) = self.meshes.get_mut(&part_id) {
+            entry.data.update_color(queue, color);
         }
     }
 
-    /// Set selected part
+    /// Set selected part.
     pub fn set_selected_part(&mut self, queue: &wgpu::Queue, part_id: Option<Uuid>) {
         // Deselect previous
-        if let Some(prev_idx) = self.selected_mesh {
-            if let Some(entry) = self.meshes.get_mut(prev_idx) {
+        if let Some(prev_id) = self.selected_part {
+            if let Some(entry) = self.meshes.get_mut(&prev_id) {
                 entry.data.set_selected(queue, false);
             }
         }
 
         // Select new
-        self.selected_mesh = part_id.and_then(|id| self.part_to_mesh.get(&id).copied());
-        if let Some(idx) = self.selected_mesh {
-            if let Some(entry) = self.meshes.get_mut(idx) {
+        self.selected_part = part_id;
+        if let Some(id) = part_id {
+            if let Some(entry) = self.meshes.get_mut(&id) {
                 entry.data.set_selected(queue, true);
             }
         }
     }
 
-    /// Remove a part
+    /// Get the currently selected part ID.
+    pub fn selected_part(&self) -> Option<Uuid> {
+        self.selected_part
+    }
+
+    /// Remove a part - O(1) operation with UUID-based storage.
     pub fn remove_part(&mut self, part_id: Uuid) {
-        if let Some(idx) = self.part_to_mesh.remove(&part_id) {
-            self.meshes.remove(idx);
-            // Update indices
-            for (_, mesh_idx) in self.part_to_mesh.iter_mut() {
-                if *mesh_idx > idx {
-                    *mesh_idx -= 1;
-                }
-            }
-            if self.selected_mesh == Some(idx) {
-                self.selected_mesh = None;
-            } else if let Some(sel) = self.selected_mesh {
-                if sel > idx {
-                    self.selected_mesh = Some(sel - 1);
-                }
-            }
+        self.meshes.remove(&part_id);
+        if self.selected_part == Some(part_id) {
+            self.selected_part = None;
         }
     }
 
-    /// Clear all parts
+    /// Clear all parts.
     pub fn clear_parts(&mut self) {
         self.meshes.clear();
-        self.part_to_mesh.clear();
-        self.selected_mesh = None;
+        self.selected_part = None;
+    }
+
+    /// Check if a part exists.
+    pub fn has_part(&self, part_id: Uuid) -> bool {
+        self.meshes.contains_key(&part_id)
+    }
+
+    /// Get the number of parts.
+    pub fn part_count(&self) -> usize {
+        self.meshes.len()
     }
 
     /// Update axis display
@@ -301,7 +359,7 @@ impl Renderer {
         self.gizmo_renderer.hit_test(ray_origin, ray_dir, gizmo_pos, scale)
     }
 
-    /// Render the scene
+    /// Render the scene.
     pub fn render(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -316,12 +374,7 @@ impl Renderer {
                 view,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color {
-                        r: 0.15,
-                        g: 0.15,
-                        b: 0.18,
-                        a: 1.0,
-                    }),
+                    load: wgpu::LoadOp::Clear(CLEAR_COLOR),
                     store: wgpu::StoreOp::Store,
                 },
             })],
@@ -342,9 +395,10 @@ impl Renderer {
             self.grid_renderer.render(&mut render_pass);
         }
 
-        // Render meshes
-        for entry in &self.meshes {
-            self.mesh_renderer.render(&mut render_pass, &entry.data, &entry.bind_group);
+        // Render meshes (iteration order doesn't matter for rendering)
+        for entry in self.meshes.values() {
+            self.mesh_renderer
+                .render(&mut render_pass, &entry.data, &entry.bind_group);
         }
 
         // Render axes
@@ -361,11 +415,6 @@ impl Renderer {
         if self.show_gizmo {
             self.gizmo_renderer.render(&mut render_pass);
         }
-    }
-
-    /// Get mesh index for a part
-    pub fn get_mesh_index(&self, part_id: Uuid) -> Option<usize> {
-        self.part_to_mesh.get(&part_id).copied()
     }
 
     /// Get camera bind group layout for external use

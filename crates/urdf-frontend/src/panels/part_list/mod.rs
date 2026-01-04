@@ -386,6 +386,7 @@ impl Panel for PartListPanel {
             self.render_base_link(ui, &base_link_name, app_state);
 
             // Render root link's own part (if it has one, e.g., when importing URDF)
+            // This will also render all its children via children_map
             if let Some(root_part_id) = root_link_part {
                 self.render_part_tree(
                     ui,
@@ -397,21 +398,21 @@ impl Panel for PartListPanel {
                     2,
                     &mut actions,
                 );
-            }
-
-            // Render connected parts (tree structure) under base_link
-            // These are children of root_link in the assembly
-            for root_id in &root_parts {
-                self.render_part_tree(
-                    ui,
-                    *root_id,
-                    &part_names,
-                    &children_map,
-                    &parts_with_parent,
-                    selected_id,
-                    2, // Start at depth 2 (under base_link)
-                    &mut actions,
-                );
+            } else {
+                // Only render root_parts separately when root_link has no part
+                // (otherwise they're already rendered as children of root_link_part)
+                for root_id in &root_parts {
+                    self.render_part_tree(
+                        ui,
+                        *root_id,
+                        &part_names,
+                        &children_map,
+                        &parts_with_parent,
+                        selected_id,
+                        2, // Start at depth 2 (under base_link)
+                        &mut actions,
+                    );
+                }
             }
 
             // Render orphaned parts (not connected to base_link)

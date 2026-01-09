@@ -16,7 +16,7 @@ authors = ["URDF Editor Contributors"]
 # Graphics (matching wiz versions)
 wgpu = "23.0"
 egui = "0.30"
-eframe = { version = "0.30", default-features = false, features = ["wgpu", "default_fonts", "x11", "wayland"] }
+eframe = { version = "0.33", default-features = false, features = ["wgpu", "default_fonts", "x11", "wayland"] }
 egui_dock = "0.15"
 egui-wgpu = "0.30"
 

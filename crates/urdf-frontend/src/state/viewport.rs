@@ -222,13 +222,8 @@ impl ViewportState {
         // Transform center by part's origin transform
         let world_center = part.origin_transform.transform_point3(center);
 
-        // Scale gizmo based on part size
-        let extent = Vec3::new(
-            part.bbox_max[0] - part.bbox_min[0],
-            part.bbox_max[1] - part.bbox_min[1],
-            part.bbox_max[2] - part.bbox_min[2],
-        );
-        let scale = (extent.length() * 0.3).max(0.1);
+        // Use fixed scale - shader handles distance-based scaling for constant screen size
+        let scale = 1.0;
 
         // Store gizmo state
         self.gizmo.gizmo_position = world_center;
@@ -246,13 +241,8 @@ impl ViewportState {
             // Transform joint point position by part's origin transform
             let world_pos = part.origin_transform.transform_point3(jp.position);
 
-            // Scale gizmo based on part size (smaller for joint points)
-            let extent = Vec3::new(
-                part.bbox_max[0] - part.bbox_min[0],
-                part.bbox_max[1] - part.bbox_min[1],
-                part.bbox_max[2] - part.bbox_min[2],
-            );
-            let scale = (extent.length() * 0.15).max(0.05);
+            // Use fixed scale - shader handles distance-based scaling for constant screen size
+            let scale = 1.0;
 
             // Store gizmo state
             self.gizmo.gizmo_position = world_pos;

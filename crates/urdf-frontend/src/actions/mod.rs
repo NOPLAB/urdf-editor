@@ -6,6 +6,8 @@
 mod assembly;
 #[cfg(not(target_arch = "wasm32"))]
 mod file;
+#[cfg(target_arch = "wasm32")]
+mod file_wasm;
 mod part;
 
 use crate::state::{AppAction, SharedAppState, SharedViewportState};
@@ -13,6 +15,8 @@ use crate::state::{AppAction, SharedAppState, SharedViewportState};
 pub use assembly::handle_assembly_action;
 #[cfg(not(target_arch = "wasm32"))]
 pub use file::handle_file_action;
+#[cfg(target_arch = "wasm32")]
+pub use file_wasm::handle_file_action_wasm;
 pub use part::handle_part_action;
 
 /// Context for action handlers
@@ -64,6 +68,19 @@ pub fn dispatch_action(action: AppAction, ctx: &ActionContext) {
                 viewport_state.lock().clear_parts();
                 viewport_state.lock().clear_overlays();
             }
+        }
+
+        // Bytes-based file actions (for WASM, but works on native too)
+        #[cfg(target_arch = "wasm32")]
+        AppAction::ImportStlBytes { .. } | AppAction::LoadProjectBytes { .. } => {
+            handle_file_action_wasm(action, ctx);
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        AppAction::ImportStlBytes { .. } | AppAction::LoadProjectBytes { .. } => {
+            // On native, bytes-based actions can still be used (e.g., for testing)
+            // but we don't have the handler compiled, so just log
+            tracing::warn!("Bytes-based file actions are primarily for WASM");
         }
 
         // Part actions

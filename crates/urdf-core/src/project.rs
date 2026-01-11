@@ -43,10 +43,16 @@ impl Project {
     /// Save project to a file
     pub fn save(&self, path: impl AsRef<Path>) -> Result<(), ProjectError> {
         let path = path.as_ref();
-        let content = ron::ser::to_string_pretty(self, ron::ser::PrettyConfig::default())
-            .map_err(|e| ProjectError::Serialize(e.to_string()))?;
+        let content = self.to_bytes()?;
         std::fs::write(path, content).map_err(|e| ProjectError::Io(e.to_string()))?;
         Ok(())
+    }
+
+    /// Serialize project to bytes (for WASM support)
+    pub fn to_bytes(&self) -> Result<Vec<u8>, ProjectError> {
+        let content = ron::ser::to_string_pretty(self, ron::ser::PrettyConfig::default())
+            .map_err(|e| ProjectError::Serialize(e.to_string()))?;
+        Ok(content.into_bytes())
     }
 
     /// Load project from a file
@@ -55,6 +61,15 @@ impl Project {
         let content = std::fs::read_to_string(path).map_err(|e| ProjectError::Io(e.to_string()))?;
         let project: Project =
             ron::from_str(&content).map_err(|e| ProjectError::Deserialize(e.to_string()))?;
+        Ok(project)
+    }
+
+    /// Load project from bytes (for WASM support)
+    pub fn load_from_bytes(data: &[u8]) -> Result<Self, ProjectError> {
+        let content =
+            std::str::from_utf8(data).map_err(|e| ProjectError::Deserialize(e.to_string()))?;
+        let project: Project =
+            ron::from_str(content).map_err(|e| ProjectError::Deserialize(e.to_string()))?;
         Ok(project)
     }
 

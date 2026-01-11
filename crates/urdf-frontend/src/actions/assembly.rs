@@ -124,6 +124,16 @@ fn handle_connect_parts(parent: Uuid, child: Uuid, ctx: &ActionContext) {
                     joint_id
                 );
                 state.modified = true;
+
+                // Update world transforms after connection
+                let joint_positions = state.joint_positions.clone();
+                state
+                    .project
+                    .assembly
+                    .update_world_transforms_with_positions(&joint_positions);
+
+                // Update renderer transforms
+                sync_renderer_transforms(&state, ctx);
             }
             Err(e) => {
                 tracing::error!("Failed to connect parts: {}", e);
@@ -149,6 +159,16 @@ fn handle_disconnect_part(child: Uuid, ctx: &ActionContext) {
             Ok(joint) => {
                 tracing::info!("Disconnected part {}, removed joint {}", child, joint.name);
                 state.modified = true;
+
+                // Update world transforms after disconnection
+                let joint_positions = state.joint_positions.clone();
+                state
+                    .project
+                    .assembly
+                    .update_world_transforms_with_positions(&joint_positions);
+
+                // Update renderer transforms
+                sync_renderer_transforms(&state, ctx);
             }
             Err(e) => {
                 tracing::error!("Failed to disconnect part: {}", e);

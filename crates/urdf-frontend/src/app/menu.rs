@@ -91,7 +91,118 @@ pub fn render_menu_bar(ctx: &egui::Context, app_state: &SharedAppState) -> Optio
                 }
                 #[cfg(target_arch = "wasm32")]
                 {
-                    ui.label("(File operations not available in web version)");
+                    if ui.button("Open Project...").clicked() {
+                        let app_state = app_state.clone();
+                        wasm_bindgen_futures::spawn_local(async move {
+                            if let Some(file) = rfd::AsyncFileDialog::new()
+                                .add_filter("URDF Project", &["ron"])
+                                .pick_file()
+                                .await
+                            {
+                                let name = file.file_name();
+                                let data = file.read().await;
+                                app_state
+                                    .lock()
+                                    .queue_action(AppAction::LoadProjectBytes { name, data });
+                            }
+                        });
+                        ui.close_menu();
+                    }
+                    if ui.button("Save Project...").clicked() {
+                        let app_state = app_state.clone();
+                        wasm_bindgen_futures::spawn_local(async move {
+                            // Serialize project to bytes
+                            let data = {
+                                let mut state = app_state.lock();
+                                // Sync parts to project before saving
+                                state.project.parts = state.parts.values().cloned().collect();
+                                match state.project.to_bytes() {
+                                    Ok(data) => data,
+                                    Err(e) => {
+                                        tracing::error!("Failed to serialize project: {}", e);
+                                        return;
+                                    }
+                                }
+                            };
+                            let project_name = app_state.lock().project.name.clone();
+                            let filename = format!("{}.ron", project_name);
+
+                            if let Some(file) = rfd::AsyncFileDialog::new()
+                                .add_filter("URDF Project", &["ron"])
+                                .set_file_name(&filename)
+                                .save_file()
+                                .await
+                            {
+                                if let Err(e) = file.write(&data).await {
+                                    tracing::error!("Failed to save project: {:?}", e);
+                                } else {
+                                    tracing::info!("Project saved successfully");
+                                }
+                            }
+                        });
+                        ui.close_menu();
+                    }
+                    ui.separator();
+                    if ui.button("Import STL...").clicked() {
+                        let app_state = app_state.clone();
+                        wasm_bindgen_futures::spawn_local(async move {
+                            if let Some(file) = rfd::AsyncFileDialog::new()
+                                .add_filter("STL files", &["stl", "STL"])
+                                .pick_file()
+                                .await
+                            {
+                                let name = file.file_name();
+                                // Remove .stl extension for part name
+                                let part_name = name
+                                    .strip_suffix(".stl")
+                                    .or_else(|| name.strip_suffix(".STL"))
+                                    .unwrap_or(&name)
+                                    .to_string();
+                                let data = file.read().await;
+                                app_state.lock().queue_action(AppAction::ImportStlBytes {
+                                    name: part_name,
+                                    data,
+                                });
+                            }
+                        });
+                        ui.close_menu();
+                    }
+                    if ui.button("Export URDF...").clicked() {
+                        let app_state = app_state.clone();
+                        wasm_bindgen_futures::spawn_local(async move {
+                            // Generate URDF string
+                            let (urdf_content, robot_name) = {
+                                let state = app_state.lock();
+                                let robot_name = state.project.name.clone();
+                                match urdf_core::export_urdf_to_string(
+                                    &state.project.assembly,
+                                    &state.parts,
+                                    &robot_name,
+                                ) {
+                                    Ok(urdf) => (urdf, robot_name),
+                                    Err(e) => {
+                                        tracing::error!("Failed to generate URDF: {}", e);
+                                        return;
+                                    }
+                                }
+                            };
+                            let filename = format!("{}.urdf", robot_name);
+
+                            if let Some(file) = rfd::AsyncFileDialog::new()
+                                .add_filter("URDF", &["urdf"])
+                                .set_file_name(&filename)
+                                .save_file()
+                                .await
+                            {
+                                if let Err(e) = file.write(urdf_content.as_bytes()).await {
+                                    tracing::error!("Failed to export URDF: {:?}", e);
+                                } else {
+                                    tracing::info!("URDF exported successfully");
+                                }
+                            }
+                        });
+                        ui.close_menu();
+                    }
                 }
             });
 

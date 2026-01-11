@@ -30,7 +30,7 @@ impl Default for ExportOptions {
     }
 }
 
-/// Export assembly to URDF
+/// Export assembly to URDF (writes files to disk)
 pub fn export_urdf(
     assembly: &Assembly,
     parts: &HashMap<uuid::Uuid, Part>,
@@ -40,8 +40,6 @@ pub fn export_urdf(
     assembly
         .validate()
         .map_err(|errors| ExportError::Validation(format!("{:?}", errors)))?;
-
-    let root_id = assembly.root_link.ok_or(ExportError::NoRootLink)?;
 
     // Create mesh directory
     let mesh_dir = options.output_dir.join(&options.mesh_prefix);
@@ -62,11 +60,55 @@ pub fn export_urdf(
         mesh_paths.insert(*part_id, uri);
     }
 
+    // Generate URDF string
+    let urdf = generate_urdf_string(assembly, parts, &mesh_paths, &options.robot_name)?;
+
+    // Write URDF file
+    let urdf_path = options
+        .output_dir
+        .join(format!("{}.urdf", options.robot_name));
+    std::fs::write(&urdf_path, &urdf).map_err(|e| ExportError::Io(e.to_string()))?;
+
+    Ok(urdf)
+}
+
+/// Export assembly to URDF string only (no file I/O, for WASM support)
+/// Note: Mesh URIs will be placeholder paths like "meshes/part_name.stl"
+pub fn export_urdf_to_string(
+    assembly: &Assembly,
+    parts: &HashMap<uuid::Uuid, Part>,
+    robot_name: &str,
+) -> Result<String, ExportError> {
+    // Validate assembly
+    assembly
+        .validate()
+        .map_err(|errors| ExportError::Validation(format!("{:?}", errors)))?;
+
+    // Generate placeholder mesh paths
+    let mut mesh_paths = HashMap::new();
+    for (part_id, part) in parts {
+        let filename = sanitize_filename(&part.name) + ".stl";
+        let uri = format!("meshes/{}", filename);
+        mesh_paths.insert(*part_id, uri);
+    }
+
+    generate_urdf_string(assembly, parts, &mesh_paths, robot_name)
+}
+
+/// Internal function to generate URDF XML string
+fn generate_urdf_string(
+    assembly: &Assembly,
+    parts: &HashMap<uuid::Uuid, Part>,
+    mesh_paths: &HashMap<uuid::Uuid, String>,
+    robot_name: &str,
+) -> Result<String, ExportError> {
+    let root_id = assembly.root_link.ok_or(ExportError::NoRootLink)?;
+
     // Build URDF string
     let mut urdf = String::new();
     urdf.push_str(&format!(
         "<?xml version=\"1.0\"?>\n<robot name=\"{}\">\n\n",
-        xml_escape(&options.robot_name)
+        xml_escape(robot_name)
     ));
 
     // Collect unique materials
@@ -94,18 +136,12 @@ pub fn export_urdf(
         &mut urdf,
         assembly,
         parts,
-        &mesh_paths,
+        mesh_paths,
         root_id,
         &mut std::collections::HashSet::new(),
     )?;
 
     urdf.push_str("</robot>\n");
-
-    // Write URDF file
-    let urdf_path = options
-        .output_dir
-        .join(format!("{}.urdf", options.robot_name));
-    std::fs::write(&urdf_path, &urdf).map_err(|e| ExportError::Io(e.to_string()))?;
 
     Ok(urdf)
 }

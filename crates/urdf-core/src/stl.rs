@@ -58,21 +58,38 @@ pub fn load_stl_with_unit(path: impl AsRef<Path>, unit: StlUnit) -> Result<Part,
     let file = std::fs::File::open(path).map_err(|e| StlError::Io(e.to_string()))?;
     let mut reader = BufReader::new(file);
 
-    let mesh = stl_io::read_stl(&mut reader).map_err(|e| StlError::Parse(e.to_string()))?;
-
-    let scale = unit.scale_factor();
-
-    // Convert to indexed mesh with scale
-    let (vertices, normals, indices) = index_mesh_with_scale(&mesh, scale);
-
     let name = path
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("unnamed")
         .to_string();
 
-    let mut part = Part::new(name);
-    part.stl_path = Some(path.to_string_lossy().to_string());
+    let stl_path = Some(path.to_string_lossy().to_string());
+    load_stl_from_reader(&mut reader, &name, stl_path, unit)
+}
+
+/// Load an STL from bytes with specified unit (for WASM support)
+pub fn load_stl_from_bytes(name: &str, data: &[u8], unit: StlUnit) -> Result<Part, StlError> {
+    let mut cursor = std::io::Cursor::new(data);
+    load_stl_from_reader(&mut cursor, name, None, unit)
+}
+
+/// Internal function to load STL from any reader
+fn load_stl_from_reader<R: std::io::Read + std::io::Seek>(
+    reader: &mut R,
+    name: &str,
+    stl_path: Option<String>,
+    unit: StlUnit,
+) -> Result<Part, StlError> {
+    let mesh = stl_io::read_stl(reader).map_err(|e| StlError::Parse(e.to_string()))?;
+
+    let scale = unit.scale_factor();
+
+    // Convert to indexed mesh with scale
+    let (vertices, normals, indices) = index_mesh_with_scale(&mesh, scale);
+
+    let mut part = Part::new(name.to_string());
+    part.stl_path = stl_path;
     part.vertices = vertices;
     part.normals = normals;
     part.indices = indices;

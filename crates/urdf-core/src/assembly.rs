@@ -635,8 +635,8 @@ impl Assembly {
             .push((joint_id, child_id));
         self.parent.insert(child_id, (joint_id, parent_id));
 
-        // Update root if child was root
-        if self.root_link == Some(child_id) {
+        // Update root: if child was root, parent becomes root; if no root exists, parent becomes root
+        if self.root_link.is_none() || self.root_link == Some(child_id) {
             self.root_link = Some(parent_id);
         }
 

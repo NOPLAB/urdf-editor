@@ -58,7 +58,11 @@ impl Link {
                 origin: Pose::default(),
                 color: part.color,
                 material_name: part.material_name.clone(),
-                geometry: GeometryType::Mesh { path: None },
+                texture: None,
+                geometry: GeometryType::Mesh {
+                    path: None,
+                    scale: None,
+                },
             }],
             collisions: vec![CollisionElement::default()],
             inertial: InertialProperties {
@@ -78,6 +82,9 @@ pub struct VisualElement {
     pub origin: Pose,
     pub color: [f32; 4],
     pub material_name: Option<String>,
+    /// Texture filename (optional)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub texture: Option<String>,
     /// Geometry type
     pub geometry: GeometryType,
 }
@@ -89,7 +96,11 @@ impl Default for VisualElement {
             origin: Pose::default(),
             color: [0.5, 0.5, 0.5, 1.0],
             material_name: None,
-            geometry: GeometryType::Mesh { path: None },
+            texture: None,
+            geometry: GeometryType::Mesh {
+                path: None,
+                scale: None,
+            },
         }
     }
 }
@@ -109,7 +120,10 @@ impl Default for CollisionElement {
         Self {
             name: None,
             origin: Pose::default(),
-            geometry: GeometryType::Mesh { path: None },
+            geometry: GeometryType::Mesh {
+                path: None,
+                scale: None,
+            },
         }
     }
 }

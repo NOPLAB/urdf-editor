@@ -28,6 +28,7 @@ bytemuck = { version = "1", features = ["derive"] }
 stl_io = "0.7"
 urdf-rs = "0.9"
 tobj = "4"
+dae-parser = "0.11"
 
 # Serialization
 serde = { version = "1", features = ["derive"] }

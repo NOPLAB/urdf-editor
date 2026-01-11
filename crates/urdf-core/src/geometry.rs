@@ -5,9 +5,12 @@ use serde::{Deserialize, Serialize};
 /// Geometry type for visual/collision elements
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum GeometryType {
-    /// Mesh geometry with optional path
+    /// Mesh geometry with optional path and scale
     Mesh {
         path: Option<String>,
+        /// Scale factor for the mesh (None means [1.0, 1.0, 1.0])
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        scale: Option<[f32; 3]>,
     },
     Box {
         size: [f32; 3],
@@ -29,9 +32,16 @@ impl GeometryType {
     /// Convert to URDF XML string for export
     pub fn to_urdf_xml(&self, mesh_uri: Option<&str>) -> String {
         match self {
-            GeometryType::Mesh { path } => {
+            GeometryType::Mesh { path, scale } => {
                 let uri = mesh_uri.or(path.as_deref()).unwrap_or("");
-                format!("<mesh filename=\"{}\"/>", uri)
+                if let Some(s) = scale {
+                    format!(
+                        "<mesh filename=\"{}\" scale=\"{} {} {}\"/>",
+                        uri, s[0], s[1], s[2]
+                    )
+                } else {
+                    format!("<mesh filename=\"{}\"/>", uri)
+                }
             }
             GeometryType::Box { size } => {
                 format!("<box size=\"{} {} {}\"/>", size[0], size[1], size[2])
@@ -58,8 +68,10 @@ impl GeometryType {
 impl From<&urdf_rs::Geometry> for GeometryType {
     fn from(geometry: &urdf_rs::Geometry) -> Self {
         match geometry {
-            urdf_rs::Geometry::Mesh { filename, .. } => GeometryType::Mesh {
+            urdf_rs::Geometry::Mesh { filename, scale: _ } => GeometryType::Mesh {
                 path: Some(filename.clone()),
+                // Scale is applied to vertices during import, so we don't store it here
+                scale: None,
             },
             urdf_rs::Geometry::Box { size } => GeometryType::Box {
                 size: [size.0[0] as f32, size.0[1] as f32, size.0[2] as f32],

@@ -482,7 +482,8 @@ fn process_visual_geometry(
 
     // Process first visual element (primary) - used to create Part
     let first_visual = &visuals[0];
-    let (color, material_name) = extract_material_info(first_visual, material_colors, options);
+    let (color, material_name, _texture) =
+        extract_material_info(first_visual, material_colors, options);
     let origin = Pose::from(&first_visual.origin);
 
     // Create part from first visual's geometry
@@ -504,7 +505,8 @@ fn process_visual_geometry(
     // Process all visual elements
     let mut visual_elements = Vec::new();
     for (i, visual) in visuals.iter().enumerate() {
-        let (elem_color, elem_material) = extract_material_info(visual, material_colors, options);
+        let (elem_color, elem_material, elem_texture) =
+            extract_material_info(visual, material_colors, options);
         let elem_origin = Pose::from(&visual.origin);
         let elem_geometry = GeometryType::from(&visual.geometry);
 
@@ -516,6 +518,7 @@ fn process_visual_geometry(
             origin: elem_origin,
             color: elem_color,
             material_name: elem_material,
+            texture: elem_texture,
             geometry: elem_geometry,
         });
     }
@@ -523,12 +526,12 @@ fn process_visual_geometry(
     Ok((part, visual_elements))
 }
 
-/// Extract material color and name from a visual element
+/// Extract material color, name, and texture from a visual element
 fn extract_material_info(
     visual: &urdf_rs::Visual,
     material_colors: &HashMap<String, [f32; 4]>,
     options: &ImportOptions,
-) -> ([f32; 4], Option<String>) {
+) -> ([f32; 4], Option<String>, Option<String>) {
     if let Some(ref mat) = visual.material {
         let color = mat
             .color
@@ -550,9 +553,12 @@ fn extract_material_info(
             Some(mat.name.clone())
         };
 
-        (color, name)
+        // Extract texture filename if present
+        let texture = mat.texture.as_ref().map(|t| t.filename.clone());
+
+        (color, name, texture)
     } else {
-        (options.default_color, None)
+        (options.default_color, None, None)
     }
 }
 
@@ -860,7 +866,8 @@ mod tests {
     #[test]
     fn test_resolve_mesh_path_unsupported_format() {
         let packages = HashMap::new();
-        let result = resolve_mesh_path("mesh.dae", Path::new("."), &packages);
+        // Use a truly unsupported format (DAE is now supported)
+        let result = resolve_mesh_path("mesh.xyz", Path::new("."), &packages);
         assert!(matches!(result, Err(ImportError::UnsupportedMeshFormat(_))));
     }
 

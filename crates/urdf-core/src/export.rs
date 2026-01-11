@@ -187,6 +187,7 @@ fn write_link(urdf: &mut String, link: &Link, part: Option<&Part>, mesh_uri: Opt
                 &elem.origin,
                 elem.material_name.as_deref(),
                 &elem.color,
+                elem.texture.as_deref(),
                 &geom_str,
             );
         }
@@ -222,6 +223,7 @@ fn write_visual_element(
     origin: &Pose,
     material_name: Option<&str>,
     color: &[f32; 4],
+    texture: Option<&str>,
     geometry_xml: &str,
 ) {
     if let Some(n) = name {
@@ -242,10 +244,18 @@ fn write_visual_element(
             xml_escape(mat_name)
         ));
     } else {
+        urdf.push_str("      <material name=\"\">\n");
         urdf.push_str(&format!(
-            "      <material name=\"\">\n        <color rgba=\"{} {} {} {}\"/>\n      </material>\n",
+            "        <color rgba=\"{} {} {} {}\"/>\n",
             color[0], color[1], color[2], color[3]
         ));
+        if let Some(tex) = texture {
+            urdf.push_str(&format!(
+                "        <texture filename=\"{}\"/>\n",
+                xml_escape(tex)
+            ));
+        }
+        urdf.push_str("      </material>\n");
     }
     urdf.push_str("    </visual>\n");
 }

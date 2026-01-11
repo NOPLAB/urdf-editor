@@ -28,6 +28,7 @@ pub fn vector3_row(ui: &mut Ui, label: &str, values: &mut [f32; 3], speed: f32) 
 }
 
 /// Render a labeled XYZ vector3 row (read-only)
+#[allow(dead_code)]
 pub fn vector3_readonly_row(ui: &mut Ui, label: &str, values: &[f32; 3]) {
     ui.horizontal(|ui| {
         ui.label(label);
@@ -65,6 +66,22 @@ pub fn rotation_row(ui: &mut Ui, label: &str, rot_deg: &mut [f32; 3], speed: f32
         changed
     })
     .inner
+}
+
+/// Render rotation row (read-only) with degree suffix
+#[allow(dead_code)]
+pub fn rotation_readonly_row(ui: &mut Ui, label: &str, rot_deg: &[f32; 3]) {
+    ui.horizontal(|ui| {
+        ui.label(label);
+    });
+    ui.horizontal(|ui| {
+        ui.label("X");
+        ui.weak(format!("{:.1}°", rot_deg[0]));
+        ui.label("Y");
+        ui.weak(format!("{:.1}°", rot_deg[1]));
+        ui.label("Z");
+        ui.weak(format!("{:.1}°", rot_deg[2]));
+    });
 }
 
 /// Render a labeled drag value

@@ -6,6 +6,7 @@ use wgpu::util::DeviceExt;
 
 use urdf_core::Part;
 
+use crate::constants::viewport::SAMPLE_COUNT;
 use crate::pipeline::create_camera_bind_group;
 
 /// Vertex for mesh rendering
@@ -260,7 +261,11 @@ impl MeshRenderer {
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
-            multisample: wgpu::MultisampleState::default(),
+            multisample: wgpu::MultisampleState {
+                count: SAMPLE_COUNT,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
             multiview: None,
             cache: None,
         });

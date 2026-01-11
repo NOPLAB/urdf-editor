@@ -14,6 +14,7 @@ use glam::{Mat4, Vec3};
 use wgpu::util::DeviceExt;
 
 use crate::constants::gizmo as constants;
+use crate::constants::viewport::SAMPLE_COUNT;
 use geometry::{generate_rotation_gizmo, generate_translation_gizmo};
 
 /// Gizmo mode
@@ -209,7 +210,11 @@ impl GizmoRenderer {
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
-            multisample: wgpu::MultisampleState::default(),
+            multisample: wgpu::MultisampleState {
+                count: SAMPLE_COUNT,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
             multiview: None,
             cache: None,
         });

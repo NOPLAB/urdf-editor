@@ -10,7 +10,7 @@ use urdf_core::Part;
 
 use crate::axis::{AxisInstance, AxisRenderer};
 use crate::camera::Camera;
-use crate::constants::viewport::CLEAR_COLOR;
+use crate::constants::viewport::{CLEAR_COLOR, SAMPLE_COUNT};
 use crate::gizmo::{GizmoAxis, GizmoMode, GizmoRenderer};
 use crate::grid::GridRenderer;
 use crate::marker::{MarkerInstance, MarkerRenderer};
@@ -29,6 +29,9 @@ pub struct Renderer {
     camera_bind_group_layout: wgpu::BindGroupLayout,
     depth_texture: wgpu::Texture,
     depth_view: wgpu::TextureView,
+    // MSAA color texture (for multisampling)
+    msaa_texture: Option<wgpu::Texture>,
+    msaa_view: Option<wgpu::TextureView>,
 
     // Sub-renderers
     grid_renderer: GridRenderer,
@@ -86,6 +89,11 @@ impl Renderer {
             });
 
         let (depth_texture, depth_view) = Self::create_depth_texture(device, width, height);
+        let msaa_result = Self::create_msaa_texture(device, format, width, height);
+        let (msaa_texture, msaa_view) = match msaa_result {
+            Some((tex, view)) => (Some(tex), Some(view)),
+            None => (None, None),
+        };
 
         let grid_renderer = GridRenderer::new(
             device,
@@ -133,6 +141,8 @@ impl Renderer {
             camera_bind_group_layout,
             depth_texture,
             depth_view,
+            msaa_texture,
+            msaa_view,
             grid_renderer,
             mesh_renderer,
             axis_renderer,
@@ -229,7 +239,7 @@ impl Renderer {
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
-            sample_count: 1,
+            sample_count: SAMPLE_COUNT,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Depth32Float,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
@@ -237,6 +247,33 @@ impl Renderer {
         });
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         (texture, view)
+    }
+
+    fn create_msaa_texture(
+        device: &wgpu::Device,
+        format: wgpu::TextureFormat,
+        width: u32,
+        height: u32,
+    ) -> Option<(wgpu::Texture, wgpu::TextureView)> {
+        if SAMPLE_COUNT <= 1 {
+            return None;
+        }
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("MSAA Color Texture"),
+            size: wgpu::Extent3d {
+                width: width.max(1),
+                height: height.max(1),
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: SAMPLE_COUNT,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        Some((texture, view))
     }
 
     pub fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) {
@@ -249,6 +286,15 @@ impl Renderer {
         let (depth_texture, depth_view) = Self::create_depth_texture(device, width, height);
         self.depth_texture = depth_texture;
         self.depth_view = depth_view;
+
+        // Recreate MSAA texture
+        let msaa_result = Self::create_msaa_texture(device, self.format, width, height);
+        let (msaa_texture, msaa_view) = match msaa_result {
+            Some((tex, view)) => (Some(tex), Some(view)),
+            None => (None, None),
+        };
+        self.msaa_texture = msaa_texture;
+        self.msaa_view = msaa_view;
     }
 
     pub fn format(&self) -> wgpu::TextureFormat {
@@ -398,16 +444,32 @@ impl Renderer {
     ) {
         self.update_camera(queue);
 
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Main Render Pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+        // Set up color attachment with MSAA if enabled
+        let color_attachment = if let Some(msaa_view) = &self.msaa_view {
+            // MSAA enabled: render to multisample texture, resolve to output
+            wgpu::RenderPassColorAttachment {
+                view: msaa_view,
+                resolve_target: Some(view),
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(CLEAR_COLOR),
+                    store: wgpu::StoreOp::Store,
+                },
+            }
+        } else {
+            // MSAA disabled: render directly to output
+            wgpu::RenderPassColorAttachment {
                 view,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(CLEAR_COLOR),
                     store: wgpu::StoreOp::Store,
                 },
-            })],
+            }
+        };
+
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Main Render Pass"),
+            color_attachments: &[Some(color_attachment)],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: &self.depth_view,
                 depth_ops: Some(wgpu::Operations {

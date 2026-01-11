@@ -27,6 +27,8 @@ pub struct PipelineConfig<'a> {
     pub depth_compare: wgpu::CompareFunction,
     /// Blend state for color output
     pub blend: Option<wgpu::BlendState>,
+    /// MSAA sample count (1 = disabled)
+    pub sample_count: u32,
 }
 
 impl<'a> PipelineConfig<'a> {
@@ -38,6 +40,7 @@ impl<'a> PipelineConfig<'a> {
     /// - Depth write enabled
     /// - Depth compare: Less
     /// - Alpha blending enabled
+    /// - MSAA sample count from viewport constants
     pub fn new(
         label: &'a str,
         shader_source: &'a str,
@@ -45,6 +48,7 @@ impl<'a> PipelineConfig<'a> {
         depth_format: wgpu::TextureFormat,
         bind_group_layouts: &'a [&'a wgpu::BindGroupLayout],
     ) -> Self {
+        use crate::constants::viewport::SAMPLE_COUNT;
         Self {
             label,
             shader_source,
@@ -57,6 +61,7 @@ impl<'a> PipelineConfig<'a> {
             depth_write: true,
             depth_compare: wgpu::CompareFunction::Less,
             blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+            sample_count: SAMPLE_COUNT,
         }
     }
 
@@ -143,7 +148,11 @@ impl<'a> PipelineConfig<'a> {
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
-            multisample: wgpu::MultisampleState::default(),
+            multisample: wgpu::MultisampleState {
+                count: self.sample_count,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
             multiview: None,
             cache: None,
         })

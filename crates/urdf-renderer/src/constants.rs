@@ -109,4 +109,7 @@ pub mod viewport {
         b: 0.18,
         a: 1.0,
     };
+
+    /// MSAA sample count for anti-aliasing (1 = disabled, 4 = 4x MSAA)
+    pub const SAMPLE_COUNT: u32 = 4;
 }

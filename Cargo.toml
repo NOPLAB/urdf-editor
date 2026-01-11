@@ -16,9 +16,15 @@ authors = ["URDF Editor Contributors"]
 # Graphics (matching wiz versions)
 wgpu = "23.0"
 egui = "0.30"
-eframe = { version = "0.30", default-features = false, features = ["wgpu", "default_fonts", "x11", "wayland"] }
+eframe = { version = "0.30", default-features = false, features = ["wgpu", "default_fonts"] }
 egui_dock = "0.15"
 egui-wgpu = "0.30"
+
+# WASM
+web-sys = "0.3"
+wasm-bindgen-futures = "0.4"
+getrandom = { version = "0.3", features = ["wasm_js"] }
+log = "0.4"
 
 # Math
 glam = "0.29"
@@ -35,7 +41,7 @@ serde = { version = "1", features = ["derive"] }
 ron = "0.8"
 
 # Utilities
-uuid = { version = "1", features = ["v4", "serde"] }
+uuid = { version = "1", features = ["v4", "serde", "js"] }
 parking_lot = "0.12"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

@@ -4,12 +4,14 @@
 //! Actions are queued in AppState and processed each frame.
 
 mod assembly;
+#[cfg(not(target_arch = "wasm32"))]
 mod file;
 mod part;
 
 use crate::state::{AppAction, SharedAppState, SharedViewportState};
 
 pub use assembly::handle_assembly_action;
+#[cfg(not(target_arch = "wasm32"))]
 pub use file::handle_file_action;
 pub use part::handle_part_action;
 
@@ -34,7 +36,8 @@ impl<'a> ActionContext<'a> {
 /// Dispatch an action to the appropriate handler
 pub fn dispatch_action(action: AppAction, ctx: &ActionContext) {
     match action {
-        // File actions
+        // File actions (native only)
+        #[cfg(not(target_arch = "wasm32"))]
         AppAction::ImportStl(_)
         | AppAction::ImportUrdf(_)
         | AppAction::SaveProject(_)
@@ -42,6 +45,25 @@ pub fn dispatch_action(action: AppAction, ctx: &ActionContext) {
         | AppAction::ExportUrdf { .. }
         | AppAction::NewProject => {
             handle_file_action(action, ctx);
+        }
+
+        // File actions (WASM - ignore)
+        #[cfg(target_arch = "wasm32")]
+        AppAction::ImportStl(_)
+        | AppAction::ImportUrdf(_)
+        | AppAction::SaveProject(_)
+        | AppAction::LoadProject(_)
+        | AppAction::ExportUrdf { .. } => {
+            tracing::warn!("File actions are not supported in WASM");
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        AppAction::NewProject => {
+            ctx.app_state.lock().new_project();
+            if let Some(viewport_state) = ctx.viewport_state {
+                viewport_state.lock().clear_parts();
+                viewport_state.lock().clear_overlays();
+            }
         }
 
         // Part actions

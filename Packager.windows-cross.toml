@@ -4,9 +4,9 @@ version = "0.1.0"
 identifier = "dev.nopp.rk"
 description = "A visual editor for URDF (Unified Robot Description Format) files"
 authors = ["RK Contributors"]
-binaries-dir = "target/release"
+binaries-dir = "target/x86_64-pc-windows-gnu/release"
 out-dir = "dist"
-before-packaging-command = "cargo build --release -p urdf-frontend"
+before-packaging-command = "cargo build --release --target x86_64-pc-windows-gnu -p urdf-frontend"
 license-file = "TERMS_OF_SERVICE.txt"
 icons = [
     "assets/icons/32x32.png",
@@ -16,7 +16,7 @@ icons = [
 ]
 
 [[binaries]]
-path = "rk"
+path = "rk.exe"
 main = true
 
 [nsis]
@@ -26,13 +26,3 @@ languages = ["English", "Japanese"]
 
 [windows]
 allowDowngrades = true
-
-[macos]
-minimumSystemVersion = "10.13"
-
-[deb]
-depends = ["libc6", "libgcc-s1", "libxcb1", "libxkbcommon0"]
-section = "graphics"
-priority = "optional"
-
-[appimage]

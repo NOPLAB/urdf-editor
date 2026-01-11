@@ -22,7 +22,8 @@ pub fn render_unit_selector(ui: &mut egui::Ui, app_state: &SharedAppState) {
 
 /// Show context menu for creating new objects
 pub fn show_tree_context_menu(ui: &mut egui::Ui, app_state: &SharedAppState) {
-    // Import STL
+    // Import STL (native only)
+    #[cfg(not(target_arch = "wasm32"))]
     if ui.button("Import STL...").clicked() {
         if let Some(path) = rfd::FileDialog::new()
             .add_filter("STL files", &["stl", "STL"])
@@ -33,6 +34,7 @@ pub fn show_tree_context_menu(ui: &mut egui::Ui, app_state: &SharedAppState) {
         ui.close_menu();
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     ui.separator();
 
     // Create Primitives submenu

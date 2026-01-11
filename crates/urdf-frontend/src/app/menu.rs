@@ -13,78 +13,85 @@ pub fn render_menu_bar(ctx: &egui::Context, app_state: &SharedAppState) -> Optio
                     app_state.lock().queue_action(AppAction::NewProject);
                     ui.close_menu();
                 }
-                if ui.button("Open Project...").clicked() {
-                    if let Some(path) = rfd::FileDialog::new()
-                        .add_filter("URDF Project", &["ron"])
-                        .pick_file()
-                    {
-                        app_state.lock().queue_action(AppAction::LoadProject(path));
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    if ui.button("Open Project...").clicked() {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("URDF Project", &["ron"])
+                            .pick_file()
+                        {
+                            app_state.lock().queue_action(AppAction::LoadProject(path));
+                        }
+                        ui.close_menu();
                     }
-                    ui.close_menu();
-                }
-                if ui.button("Save Project").clicked() {
-                    app_state.lock().queue_action(AppAction::SaveProject(None));
-                    ui.close_menu();
-                }
-                if ui.button("Save Project As...").clicked() {
-                    if let Some(path) = rfd::FileDialog::new()
-                        .add_filter("URDF Project", &["ron"])
-                        .save_file()
-                    {
-                        app_state
-                            .lock()
-                            .queue_action(AppAction::SaveProject(Some(path)));
+                    if ui.button("Save Project").clicked() {
+                        app_state.lock().queue_action(AppAction::SaveProject(None));
+                        ui.close_menu();
                     }
-                    ui.close_menu();
-                }
-                ui.separator();
-                if ui.button("Import STL...").clicked() {
-                    if let Some(path) = rfd::FileDialog::new()
-                        .add_filter("STL files", &["stl", "STL"])
-                        .pick_file()
-                    {
-                        app_state.lock().queue_action(AppAction::ImportStl(path));
+                    if ui.button("Save Project As...").clicked() {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("URDF Project", &["ron"])
+                            .save_file()
+                        {
+                            app_state
+                                .lock()
+                                .queue_action(AppAction::SaveProject(Some(path)));
+                        }
+                        ui.close_menu();
                     }
-                    ui.close_menu();
-                }
-                if ui.button("Import URDF...").clicked() {
-                    if let Some(path) = rfd::FileDialog::new()
-                        .add_filter("URDF", &["urdf", "xacro", "xml"])
-                        .add_filter("All files", &["*"])
-                        .pick_file()
-                    {
-                        app_state.lock().queue_action(AppAction::ImportUrdf(path));
+                    ui.separator();
+                    if ui.button("Import STL...").clicked() {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("STL files", &["stl", "STL"])
+                            .pick_file()
+                        {
+                            app_state.lock().queue_action(AppAction::ImportStl(path));
+                        }
+                        ui.close_menu();
                     }
-                    ui.close_menu();
-                }
-                if ui.button("Export URDF...").clicked() {
-                    let default_name = app_state.lock().project.name.clone();
-                    if let Some(path) = rfd::FileDialog::new()
-                        .add_filter("URDF", &["urdf"])
-                        .set_file_name(format!("{}.urdf", default_name))
-                        .save_file()
-                    {
-                        // Extract robot name from file name (without extension)
-                        let robot_name = path
-                            .file_stem()
-                            .and_then(|s| s.to_str())
-                            .unwrap_or("robot")
-                            .to_string();
-                        // Use parent directory as output dir
-                        let output_dir = path
-                            .parent()
-                            .map(|p| p.to_path_buf())
-                            .unwrap_or_else(|| std::path::PathBuf::from("."));
-                        app_state.lock().queue_action(AppAction::ExportUrdf {
-                            path: output_dir,
-                            robot_name,
-                        });
+                    if ui.button("Import URDF...").clicked() {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("URDF", &["urdf", "xacro", "xml"])
+                            .add_filter("All files", &["*"])
+                            .pick_file()
+                        {
+                            app_state.lock().queue_action(AppAction::ImportUrdf(path));
+                        }
+                        ui.close_menu();
                     }
-                    ui.close_menu();
+                    if ui.button("Export URDF...").clicked() {
+                        let default_name = app_state.lock().project.name.clone();
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("URDF", &["urdf"])
+                            .set_file_name(format!("{}.urdf", default_name))
+                            .save_file()
+                        {
+                            // Extract robot name from file name (without extension)
+                            let robot_name = path
+                                .file_stem()
+                                .and_then(|s| s.to_str())
+                                .unwrap_or("robot")
+                                .to_string();
+                            // Use parent directory as output dir
+                            let output_dir = path
+                                .parent()
+                                .map(|p| p.to_path_buf())
+                                .unwrap_or_else(|| std::path::PathBuf::from("."));
+                            app_state.lock().queue_action(AppAction::ExportUrdf {
+                                path: output_dir,
+                                robot_name,
+                            });
+                        }
+                        ui.close_menu();
+                    }
+                    ui.separator();
+                    if ui.button("Exit").clicked() {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
                 }
-                ui.separator();
-                if ui.button("Exit").clicked() {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                #[cfg(target_arch = "wasm32")]
+                {
+                    ui.label("(File operations not available in web version)");
                 }
             });
 

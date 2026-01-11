@@ -10,20 +10,38 @@ build = "build.rs"
 name = "rk"
 path = "src/main.rs"
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
 urdf-core = { workspace = true }
 urdf-renderer = { workspace = true }
 egui = { workspace = true }
-eframe = { workspace = true }
 egui_dock = { workspace = true }
 egui-wgpu = { workspace = true }
 wgpu = { workspace = true }
 glam = { workspace = true }
 parking_lot = { workspace = true }
 tracing = { workspace = true }
+uuid = { workspace = true }
+
+# Native-only dependencies
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+eframe = { workspace = true, features = ["x11", "wayland"] }
 tracing-subscriber = { workspace = true }
 rfd = { workspace = true }
-uuid = { workspace = true }
+
+# WASM eframe
+[target.'cfg(target_arch = "wasm32")'.dependencies.eframe]
+workspace = true
+features = ["web_screen_reader"]
+
+# WASM dependencies
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-sys = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
+getrandom = { workspace = true }
+log = { workspace = true }
 
 [target.'cfg(windows)'.build-dependencies]
 winres = "0.1"

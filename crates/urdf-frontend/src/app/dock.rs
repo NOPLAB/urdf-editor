@@ -71,21 +71,21 @@ pub fn create_dock_layout() -> DockState<PanelType> {
     // Get the main surface
     let surface = dock_state.main_surface_mut();
 
-    // Split right for properties
-    let [_viewport, _right] = surface.split_right(
+    // 1. Split right for properties (Viewport 75%, Properties 25%)
+    let [viewport_area, _properties] = surface.split_right(
         NodeIndex::root(),
         0.75,
         vec![PanelType::Properties(PropertiesPanel::new())],
     );
 
-    // Split left for parts list (now includes hierarchy via tree structure)
+    // 2. Split left from viewport area for parts list
     let [left, _viewport] = surface.split_left(
-        NodeIndex::root(),
-        0.2,
+        viewport_area,
+        0.25, // Left panel gets 25% of the viewport area
         vec![PanelType::PartList(PartListPanel::new())],
     );
 
-    // Split left panel vertically to add joints below parts
+    // 3. Split left panel vertically to add joints below parts
     let [_parts, _joints] = surface.split_below(
         left,
         0.6, // Parts gets 60%, Joints gets 40%

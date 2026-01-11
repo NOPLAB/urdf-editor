@@ -13,9 +13,14 @@ fn main() -> eframe::Result<()> {
 
     tracing::info!("Starting URDF Editor");
 
-    // Configure wgpu - allow all backends and let wgpu choose the best one
+    // Configure wgpu
+    // Use DX12 on Windows to avoid AMD Vulkan driver freeze issues
+    // See: https://github.com/emilk/egui/issues/7718
     let wgpu_options = egui_wgpu::WgpuConfiguration {
         wgpu_setup: egui_wgpu::WgpuSetup::CreateNew {
+            #[cfg(target_os = "windows")]
+            supported_backends: wgpu::Backends::DX12,
+            #[cfg(not(target_os = "windows"))]
             supported_backends: wgpu::Backends::all(),
             power_preference: wgpu::PowerPreference::default(),
             device_descriptor: std::sync::Arc::new(|adapter| wgpu::DeviceDescriptor {

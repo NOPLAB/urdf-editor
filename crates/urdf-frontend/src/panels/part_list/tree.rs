@@ -16,16 +16,14 @@ pub enum TreeAction {
 /// Build tree structure from Assembly state
 ///
 /// Returns:
-/// - root_link_part: Part belonging to the root link (if any)
-/// - root_parts: Parts that are direct children of root_link
+/// - root_parts: Parts whose links have no parent (top-level parts in hierarchy)
 /// - children_map: Map of part_id -> child part_ids
 /// - parts_with_parent: Set of parts that have a parent
-/// - orphaned_parts: Parts not connected to root_link hierarchy
+/// - unconnected_parts: Parts not in assembly at all
 #[allow(clippy::type_complexity)]
 pub fn build_tree_structure(
     state: &AppState,
 ) -> (
-    Option<Uuid>,
     Vec<Uuid>,
     HashMap<Uuid, Vec<Uuid>>,
     HashSet<Uuid>,
@@ -48,7 +46,6 @@ pub fn build_tree_structure(
         .collect();
 
     // Build children map (part_id -> [child_part_ids])
-    // For links without part_id, we track their children separately
     let mut children_map: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
     for (parent_link_id, children) in &assembly.children {
         if let Some(&parent_part_id) = link_to_part.get(parent_link_id) {
@@ -62,59 +59,41 @@ pub fn build_tree_structure(
         }
     }
 
-    // Identify parts with parents
+    // Identify parts with parents (their links are in assembly.parent)
     let parts_with_parent: HashSet<Uuid> = assembly
         .parent
         .keys()
         .filter_map(|link_id| link_to_part.get(link_id).copied())
         .collect();
 
-    // Find parts that are direct children of root_link
-    let mut root_parts: Vec<Uuid> = Vec::new();
-    if let Some(root_link_id) = assembly.root_link {
-        // Get children of root_link
-        if let Some(children) = assembly.children.get(&root_link_id) {
-            for (_, child_link_id) in children {
-                if let Some(&part_id) = link_to_part.get(child_link_id) {
-                    root_parts.push(part_id);
-                }
-            }
-        }
-    }
-
-    // Find orphaned parts (not connected to root_link hierarchy)
-    // Note: root_link itself is not orphaned even though it has no parent
-    let root_link_part_id: Option<Uuid> = assembly
-        .root_link
-        .and_then(|root_id| assembly.links.get(&root_id))
-        .and_then(|link| link.part_id);
-
-    let orphaned_parts: Vec<Uuid> = state
+    // Root parts: parts with a link but no parent (top of their hierarchy)
+    let root_parts: Vec<Uuid> = state
         .parts
         .keys()
         .filter(|part_id| {
-            // Root link's part is not orphaned
-            if Some(**part_id) == root_link_part_id {
-                return false;
-            }
-
             if let Some(&link_id) = part_to_link.get(part_id) {
-                // Part has a link - check if it's disconnected (no parent)
+                // Part has a link - it's a root if it has no parent
                 !assembly.parent.contains_key(&link_id)
             } else {
-                // Part not in assembly at all
-                true
+                false // No link = not a root (it's unconnected)
             }
         })
         .copied()
         .collect();
 
+    // Unconnected parts: parts not in assembly at all (no link)
+    let unconnected_parts: Vec<Uuid> = state
+        .parts
+        .keys()
+        .filter(|part_id| !part_to_link.contains_key(part_id))
+        .copied()
+        .collect();
+
     (
-        root_link_part_id,
         root_parts,
         children_map,
         parts_with_parent,
-        orphaned_parts,
+        unconnected_parts,
     )
 }
 

@@ -260,7 +260,7 @@ impl Panel for PartListPanel {
         let project_name = state.project.name.clone();
 
         // Build tree structure from Assembly
-        let (root_link_part, root_parts, children_map, parts_with_parent, orphaned_parts) =
+        let (root_parts, children_map, parts_with_parent, unconnected_parts) =
             build_tree_structure(&state);
 
         // Collect part names for display
@@ -285,12 +285,11 @@ impl Panel for PartListPanel {
 
             ui.add_space(4.0);
 
-            // Render root link's own part (if it has one, e.g., when importing URDF)
-            // This will also render all its children via children_map
-            if let Some(root_part_id) = root_link_part {
+            // Render root parts (parts with links but no parent)
+            for root_id in &root_parts {
                 self.render_part_tree(
                     ui,
-                    root_part_id,
+                    *root_id,
                     &part_names,
                     &children_map,
                     &parts_with_parent,
@@ -298,32 +297,17 @@ impl Panel for PartListPanel {
                     1,
                     &mut actions,
                 );
-            } else {
-                // Only render root_parts separately when root_link has no part
-                // (otherwise they're already rendered as children of root_link_part)
-                for root_id in &root_parts {
-                    self.render_part_tree(
-                        ui,
-                        *root_id,
-                        &part_names,
-                        &children_map,
-                        &parts_with_parent,
-                        selected_id,
-                        1,
-                        &mut actions,
-                    );
-                }
             }
 
-            // Render orphaned parts (not connected to any hierarchy)
-            if !orphaned_parts.is_empty() {
+            // Render unconnected parts (parts not in assembly at all)
+            if !unconnected_parts.is_empty() {
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
                     ui.add_space(16.0);
                     ui.label(egui::RichText::new("Unconnected").weak().italics());
                 });
 
-                for part_id in &orphaned_parts {
+                for part_id in &unconnected_parts {
                     if let Some(name) = part_names.get(part_id) {
                         self.render_orphan_part(ui, *part_id, name, selected_id, &mut actions);
                     }

@@ -102,7 +102,14 @@ fn generate_urdf_string(
     mesh_paths: &HashMap<uuid::Uuid, String>,
     robot_name: &str,
 ) -> Result<String, ExportError> {
-    let root_id = assembly.root_link.ok_or(ExportError::NoRootLink)?;
+    let roots = assembly.get_root_links();
+    let root_id = roots.first().copied().ok_or(ExportError::NoRootLink)?;
+    if roots.len() > 1 {
+        eprintln!(
+            "Warning: Multiple root links found ({}), using first one for URDF export",
+            roots.len()
+        );
+    }
 
     // Build URDF string
     let mut urdf = String::new();

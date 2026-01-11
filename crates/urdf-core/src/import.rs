@@ -2,7 +2,7 @@
 //!
 //! Imports URDF files and converts them to the internal Project format.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use glam::Vec3;
@@ -254,23 +254,8 @@ pub fn import_urdf(urdf_path: &Path, options: &ImportOptions) -> Result<Project,
         links.insert(link_id, link);
     }
 
-    // Find root link (link that is not a child of any joint)
-    let mut child_links: HashSet<String> = HashSet::new();
-    for urdf_joint in &robot.joints {
-        child_links.insert(urdf_joint.child.link.clone());
-    }
-
-    let root_link_name = robot
-        .links
-        .iter()
-        .find(|l| !child_links.contains(&l.name))
-        .map(|l| l.name.clone());
-
-    let root_link_id = root_link_name.and_then(|name| link_name_to_id.get(&name).copied());
-
-    // Build Assembly
+    // Build Assembly (root links are determined automatically by get_root_links())
     let mut assembly = Assembly::new(&robot.name);
-    assembly.root_link = root_link_id;
     assembly.links = links;
     // Rebuild name indices
     assembly.rebuild_indices();

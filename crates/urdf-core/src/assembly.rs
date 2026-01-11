@@ -1,6 +1,6 @@
 //! Assembly (scene graph) for robot structure
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use glam::{Mat4, Quat, Vec3};
 use serde::{Deserialize, Serialize};
@@ -480,8 +480,6 @@ impl Default for JointDynamics {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Assembly {
     pub name: String,
-    /// Root link ID
-    pub root_link: Option<Uuid>,
     /// All links
     pub links: HashMap<Uuid, Link>,
     /// All joints
@@ -511,7 +509,6 @@ impl Assembly {
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
-            root_link: None,
             links: HashMap::new(),
             joints: HashMap::new(),
             joint_points: HashMap::new(),
@@ -520,6 +517,15 @@ impl Assembly {
             link_name_index: HashMap::new(),
             joint_name_index: HashMap::new(),
         }
+    }
+
+    /// Get all root links (links without parents)
+    pub fn get_root_links(&self) -> Vec<Uuid> {
+        self.links
+            .keys()
+            .filter(|id| !self.parent.contains_key(id))
+            .copied()
+            .collect()
     }
 
     /// Rebuild name indices (call after deserialization)
@@ -589,11 +595,6 @@ impl Assembly {
             children.retain(|(_, child_id)| !to_remove.contains(child_id));
         }
 
-        // Update root if needed
-        if self.root_link == Some(id) {
-            self.root_link = self.links.keys().next().copied();
-        }
-
         Ok(())
     }
 
@@ -634,11 +635,6 @@ impl Assembly {
             .or_default()
             .push((joint_id, child_id));
         self.parent.insert(child_id, (joint_id, parent_id));
-
-        // Update root: if child was root, parent becomes root; if no root exists, parent becomes root
-        if self.root_link.is_none() || self.root_link == Some(child_id) {
-            self.root_link = Some(parent_id);
-        }
 
         Ok(joint_id)
     }
@@ -704,7 +700,8 @@ impl Assembly {
 
     /// Update all world transforms
     pub fn update_world_transforms(&mut self) {
-        if let Some(root_id) = self.root_link {
+        let roots = self.get_root_links();
+        for root_id in roots {
             self.update_transform_recursive(root_id, Mat4::IDENTITY);
         }
     }
@@ -738,7 +735,8 @@ impl Assembly {
 
     /// Update all world transforms with joint positions applied
     pub fn update_world_transforms_with_positions(&mut self, joint_positions: &HashMap<Uuid, f32>) {
-        if let Some(root_id) = self.root_link {
+        let roots = self.get_root_links();
+        for root_id in roots {
             self.update_transform_recursive_with_positions(
                 root_id,
                 Mat4::IDENTITY,
@@ -808,22 +806,7 @@ impl Assembly {
     pub fn validate(&self) -> Result<(), Vec<AssemblyError>> {
         let mut errors = Vec::new();
 
-        // Check for root
-        if self.root_link.is_none() && !self.links.is_empty() {
-            errors.push(AssemblyError::NoRoot);
-        }
-
-        // Check for orphaned links
-        let mut reachable = HashSet::new();
-        if let Some(root_id) = self.root_link {
-            self.collect_reachable(root_id, &mut reachable);
-        }
-
-        for link_id in self.links.keys() {
-            if !reachable.contains(link_id) {
-                errors.push(AssemblyError::OrphanedLink(*link_id));
-            }
-        }
+        // All links are reachable from their respective roots (no orphans possible with multiple roots)
 
         // Check joint references
         for joint in self.joints.values() {
@@ -848,21 +831,10 @@ impl Assembly {
         }
     }
 
-    fn collect_reachable(&self, link_id: Uuid, reachable: &mut HashSet<Uuid>) {
-        if !reachable.insert(link_id) {
-            return; // Already visited
-        }
-        if let Some(children) = self.children.get(&link_id) {
-            for (_, child_id) in children {
-                self.collect_reachable(*child_id, reachable);
-            }
-        }
-    }
-
-    /// Get all links in depth-first order from root
+    /// Get all links in depth-first order from all roots
     pub fn links_depth_first(&self) -> Vec<Uuid> {
         let mut result = Vec::new();
-        if let Some(root_id) = self.root_link {
+        for root_id in self.get_root_links() {
             self.collect_depth_first(root_id, &mut result);
         }
         result

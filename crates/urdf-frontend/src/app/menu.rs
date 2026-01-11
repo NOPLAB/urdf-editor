@@ -17,7 +17,7 @@ pub fn render_menu_bar(ctx: &egui::Context, app_state: &SharedAppState) -> Optio
                 {
                     if ui.button("Open Project...").clicked() {
                         if let Some(path) = rfd::FileDialog::new()
-                            .add_filter("URDF Project", &["ron"])
+                            .add_filter("RK Project", &["rk"])
                             .pick_file()
                         {
                             app_state.lock().queue_action(AppAction::LoadProject(path));
@@ -30,7 +30,7 @@ pub fn render_menu_bar(ctx: &egui::Context, app_state: &SharedAppState) -> Optio
                     }
                     if ui.button("Save Project As...").clicked() {
                         if let Some(path) = rfd::FileDialog::new()
-                            .add_filter("URDF Project", &["ron"])
+                            .add_filter("RK Project", &["rk"])
                             .save_file()
                         {
                             app_state
@@ -95,7 +95,7 @@ pub fn render_menu_bar(ctx: &egui::Context, app_state: &SharedAppState) -> Optio
                         let app_state = app_state.clone();
                         wasm_bindgen_futures::spawn_local(async move {
                             if let Some(file) = rfd::AsyncFileDialog::new()
-                                .add_filter("URDF Project", &["ron"])
+                                .add_filter("RK Project", &["rk"])
                                 .pick_file()
                                 .await
                             {
@@ -125,10 +125,10 @@ pub fn render_menu_bar(ctx: &egui::Context, app_state: &SharedAppState) -> Optio
                                 }
                             };
                             let project_name = app_state.lock().project.name.clone();
-                            let filename = format!("{}.ron", project_name);
+                            let filename = format!("{}.rk", project_name);
 
                             if let Some(file) = rfd::AsyncFileDialog::new()
-                                .add_filter("URDF Project", &["ron"])
+                                .add_filter("RK Project", &["rk"])
                                 .set_file_name(&filename)
                                 .save_file()
                                 .await

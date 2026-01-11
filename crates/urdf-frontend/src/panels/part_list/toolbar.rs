@@ -4,20 +4,9 @@ use urdf_core::StlUnit;
 
 use crate::state::{AppAction, PrimitiveType, SharedAppState};
 
-/// Render the import STL toolbar
-pub fn render_import_toolbar(ui: &mut egui::Ui, app_state: &SharedAppState) {
+/// Render the global unit selector
+pub fn render_unit_selector(ui: &mut egui::Ui, app_state: &SharedAppState) {
     ui.horizontal(|ui| {
-        if ui.button("Import STL...").clicked() {
-            if let Some(path) = rfd::FileDialog::new()
-                .add_filter("STL files", &["stl", "STL"])
-                .pick_file()
-            {
-                app_state.lock().queue_action(AppAction::ImportStl(path));
-            }
-        }
-
-        ui.separator();
-
         ui.label("Unit:");
         let mut state = app_state.lock();
         let current_unit = state.stl_import_unit;

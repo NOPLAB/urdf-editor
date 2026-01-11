@@ -85,7 +85,7 @@ pub struct AppState {
     pub show_part_axes: bool,
     /// Show joint point markers
     pub show_joint_markers: bool,
-    /// STL import unit (for scaling)
+    /// Global unit setting for STL import and other operations
     pub stl_import_unit: StlUnit,
 }
 

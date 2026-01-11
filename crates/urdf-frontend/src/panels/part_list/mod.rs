@@ -9,7 +9,7 @@ use uuid::Uuid;
 use crate::panels::Panel;
 use crate::state::{AppAction, SharedAppState};
 
-use toolbar::{render_import_toolbar, show_tree_context_menu};
+use toolbar::{render_unit_selector, show_tree_context_menu};
 use tree::{build_tree_structure, can_connect, TreeAction};
 
 /// Part list panel with drag-and-drop hierarchy
@@ -251,8 +251,8 @@ impl Panel for PartListPanel {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, app_state: &SharedAppState) {
-        // Import STL toolbar
-        render_import_toolbar(ui, app_state);
+        // Global unit selector
+        render_unit_selector(ui, app_state);
 
         ui.separator();
 
@@ -422,7 +422,7 @@ impl Panel for PartListPanel {
         }
 
         if is_empty {
-            ui.weak("No parts loaded.\nClick 'Import STL...' to add parts.");
+            ui.weak("No parts loaded.\nUse File > Import STL or right-click to add parts.");
         }
     }
 }

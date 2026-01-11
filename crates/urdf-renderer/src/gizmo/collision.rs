@@ -1,7 +1,7 @@
 //! Gizmo collision detection utilities
 //!
 //! This module implements ray-casting collision detection for gizmo handle picking.
-//! It provides functions for testing ray-cylinder intersections.
+//! It provides functions for testing ray-cylinder and ray-ring intersections.
 
 use glam::Vec3;
 
@@ -108,6 +108,70 @@ pub fn ray_cylinder_intersection(
     }
 
     Some(t)
+}
+
+/// Ray-ring intersection test.
+///
+/// Tests if a ray intersects with a ring (circle with thickness) in 3D space.
+/// The ring is defined by its center, normal (axis), radius, and thickness.
+///
+/// # Algorithm
+///
+/// 1. Find intersection of ray with the ring's plane
+/// 2. Check if the intersection point is within the ring's annular region
+///    (distance from center is close to ring radius, within thickness)
+///
+/// # Arguments
+///
+/// * `ray_origin` - The starting point of the ray.
+/// * `ray_dir` - The direction of the ray (should be normalized).
+/// * `ring_center` - The center point of the ring.
+/// * `ring_normal` - The normal vector of the ring's plane (axis of rotation).
+/// * `ring_radius` - The radius of the ring (distance from center to ring center line).
+/// * `thickness` - The thickness of the ring (hit tolerance).
+///
+/// # Returns
+///
+/// * `Some(t)` - The ray parameter at the intersection point.
+/// * `None` - If the ray does not intersect the ring.
+pub fn ray_ring_intersection(
+    ray_origin: Vec3,
+    ray_dir: Vec3,
+    ring_center: Vec3,
+    ring_normal: Vec3,
+    ring_radius: f32,
+    thickness: f32,
+) -> Option<f32> {
+    // Find ray-plane intersection
+    let denom = ray_dir.dot(ring_normal);
+
+    // Ray is nearly parallel to the plane
+    if denom.abs() < 1e-6 {
+        return None;
+    }
+
+    let t = (ring_center - ray_origin).dot(ring_normal) / denom;
+
+    // Intersection is behind the ray origin
+    if t < 0.0 {
+        return None;
+    }
+
+    // Calculate intersection point
+    let hit_point = ray_origin + ray_dir * t;
+
+    // Calculate distance from ring center in the plane
+    let offset = hit_point - ring_center;
+    let distance_from_center = offset.length();
+
+    // Check if the point is within the ring's annular region
+    let distance_from_ring = (distance_from_center - ring_radius).abs();
+
+    if distance_from_ring <= thickness {
+        Some(t)
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]

@@ -32,6 +32,17 @@ pub mod gizmo {
     /// Hit test cylinder radius multiplier
     pub const HIT_RADIUS_MULTIPLIER: f32 = 0.08;
 
+    /// Rotation gizmo ring radius
+    pub const RING_RADIUS: f32 = 0.8;
+    /// Rotation gizmo ring tube thickness
+    pub const RING_THICKNESS: f32 = 0.03;
+    /// Number of segments for ring (around the circle)
+    pub const RING_SEGMENTS: u32 = 32;
+    /// Number of segments for ring tube (cross-section)
+    pub const RING_TUBE_SEGMENTS: u32 = 8;
+    /// Hit test ring thickness multiplier
+    pub const RING_HIT_THICKNESS: f32 = 0.1;
+
     /// Axis colors for gizmo
     pub mod colors {
         /// X-axis color (red)

@@ -48,7 +48,15 @@ impl TabViewer for UrdfTabViewer<'_> {
                 }
             }
             PanelType::PartList(panel) => panel.ui(ui, self.app_state),
-            PanelType::Properties(panel) => panel.ui(ui, self.app_state),
+            PanelType::Properties(panel) => {
+                if let (Some(render_state), Some(viewport_state)) =
+                    (self.render_state, self.viewport_state)
+                {
+                    panel.ui_with_render_context(ui, self.app_state, render_state, viewport_state);
+                } else {
+                    panel.ui(ui, self.app_state);
+                }
+            }
         }
     }
 }

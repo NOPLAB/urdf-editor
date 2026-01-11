@@ -165,8 +165,11 @@ fn handle_save_project(path: Option<std::path::PathBuf>, ctx: &ActionContext) {
 
 fn handle_load_project(path: std::path::PathBuf, ctx: &ActionContext) {
     match Project::load(&path) {
-        Ok(project) => {
+        Ok(mut project) => {
             tracing::info!("Loaded project: {}", project.name);
+
+            // Ensure joint_points are synced from assembly (for older project files)
+            sync_joint_points_from_assembly(&mut project);
 
             // Clear viewport
             if let Some(viewport_state) = ctx.viewport_state {
@@ -186,6 +189,90 @@ fn handle_load_project(path: std::path::PathBuf, ctx: &ActionContext) {
         }
         Err(e) => {
             tracing::error!("Failed to load project: {}", e);
+        }
+    }
+}
+
+/// Sync joint_points from assembly joints to parts
+/// This handles older project files that may not have joint_points saved
+fn sync_joint_points_from_assembly(project: &mut Project) {
+    use glam::Vec3;
+    use urdf_core::JointPoint;
+
+    for joint in project.assembly.joints.values_mut() {
+        // Get link names for naming joint points
+        let parent_link_name = project
+            .assembly
+            .links
+            .get(&joint.parent_link)
+            .map(|l| l.name.clone())
+            .unwrap_or_default();
+        let child_link_name = project
+            .assembly
+            .links
+            .get(&joint.child_link)
+            .map(|l| l.name.clone())
+            .unwrap_or_default();
+
+        // Get part IDs from links
+        let parent_part_id = project
+            .assembly
+            .links
+            .get(&joint.parent_link)
+            .and_then(|l| l.part_id);
+        let child_part_id = project
+            .assembly
+            .links
+            .get(&joint.child_link)
+            .and_then(|l| l.part_id);
+
+        // Create joint point on parent part if not exists
+        if joint.parent_joint_point.is_none() {
+            if let Some(part_id) = parent_part_id {
+                if let Some(part) = project.parts.iter_mut().find(|p| p.id == part_id) {
+                    let jp = JointPoint {
+                        id: uuid::Uuid::new_v4(),
+                        name: format!("joint_to_{}", child_link_name),
+                        position: Vec3::new(
+                            joint.origin.xyz[0],
+                            joint.origin.xyz[1],
+                            joint.origin.xyz[2],
+                        ),
+                        orientation: glam::Quat::from_euler(
+                            glam::EulerRot::XYZ,
+                            joint.origin.rpy[0],
+                            joint.origin.rpy[1],
+                            joint.origin.rpy[2],
+                        ),
+                        joint_type: joint.joint_type,
+                        axis: joint.axis,
+                        limits: joint.limits,
+                    };
+                    let jp_id = jp.id;
+                    part.joint_points.push(jp);
+                    joint.parent_joint_point = Some(jp_id);
+                }
+            }
+        }
+
+        // Create joint point on child part if not exists
+        if joint.child_joint_point.is_none() {
+            if let Some(part_id) = child_part_id {
+                if let Some(part) = project.parts.iter_mut().find(|p| p.id == part_id) {
+                    let jp = JointPoint {
+                        id: uuid::Uuid::new_v4(),
+                        name: format!("joint_from_{}", parent_link_name),
+                        position: Vec3::ZERO,
+                        orientation: glam::Quat::IDENTITY,
+                        joint_type: joint.joint_type,
+                        axis: joint.axis,
+                        limits: joint.limits,
+                    };
+                    let jp_id = jp.id;
+                    part.joint_points.push(jp);
+                    joint.child_joint_point = Some(jp_id);
+                }
+            }
         }
     }
 }

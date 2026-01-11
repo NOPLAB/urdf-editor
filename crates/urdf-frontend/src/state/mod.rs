@@ -4,7 +4,7 @@ mod editor;
 mod viewport;
 
 pub use editor::{EditorTool, PrimitiveType};
-pub use viewport::{GizmoInteraction, SharedViewportState, ViewportState};
+pub use viewport::{GizmoInteraction, GizmoTransform, SharedViewportState, ViewportState};
 
 use std::collections::HashMap;
 use std::path::PathBuf;

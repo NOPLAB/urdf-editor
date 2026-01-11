@@ -1,12 +1,12 @@
 //! Transform gizmo renderer
 //!
 //! This module provides a 3D transform gizmo for manipulating objects
-//! in the viewport. Currently supports translation mode.
+//! in the viewport. Supports translation and rotation modes.
 
 mod collision;
 mod geometry;
 
-pub use collision::ray_cylinder_intersection;
+pub use collision::{ray_cylinder_intersection, ray_ring_intersection};
 pub use geometry::GizmoVertex;
 
 use bytemuck::{Pod, Zeroable};
@@ -14,15 +14,13 @@ use glam::{Mat4, Vec3};
 use wgpu::util::DeviceExt;
 
 use crate::constants::gizmo as constants;
-use geometry::generate_translation_gizmo;
+use geometry::{generate_rotation_gizmo, generate_translation_gizmo};
 
 /// Gizmo mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum GizmoMode {
     #[default]
     Translate,
-    /// Rotation mode - planned for future implementation
-    #[allow(dead_code)]
     Rotate,
 }
 
@@ -80,9 +78,15 @@ impl Default for GizmoInstance {
 /// Gizmo renderer
 pub struct GizmoRenderer {
     pipeline: wgpu::RenderPipeline,
-    vertex_buffer: wgpu::Buffer,
-    index_buffer: wgpu::Buffer,
-    index_count: u32,
+    // Translation gizmo buffers
+    translate_vertex_buffer: wgpu::Buffer,
+    translate_index_buffer: wgpu::Buffer,
+    translate_index_count: u32,
+    // Rotation gizmo buffers
+    rotate_vertex_buffer: wgpu::Buffer,
+    rotate_index_buffer: wgpu::Buffer,
+    rotate_index_count: u32,
+    // Shared buffers
     instance_buffer: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
     pub visible: bool,
@@ -210,18 +214,37 @@ impl GizmoRenderer {
             cache: None,
         });
 
-        let (vertices, indices) = generate_translation_gizmo();
-        let index_count = indices.len() as u32;
+        // Translation gizmo geometry
+        let (translate_vertices, translate_indices) = generate_translation_gizmo();
+        let translate_index_count = translate_indices.len() as u32;
 
-        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Gizmo Vertex Buffer"),
-            contents: bytemuck::cast_slice(&vertices),
+        let translate_vertex_buffer =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Gizmo Translate Vertex Buffer"),
+                contents: bytemuck::cast_slice(&translate_vertices),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+
+        let translate_index_buffer =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Gizmo Translate Index Buffer"),
+                contents: bytemuck::cast_slice(&translate_indices),
+                usage: wgpu::BufferUsages::INDEX,
+            });
+
+        // Rotation gizmo geometry
+        let (rotate_vertices, rotate_indices) = generate_rotation_gizmo();
+        let rotate_index_count = rotate_indices.len() as u32;
+
+        let rotate_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Gizmo Rotate Vertex Buffer"),
+            contents: bytemuck::cast_slice(&rotate_vertices),
             usage: wgpu::BufferUsages::VERTEX,
         });
 
-        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Gizmo Index Buffer"),
-            contents: bytemuck::cast_slice(&indices),
+        let rotate_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Gizmo Rotate Index Buffer"),
+            contents: bytemuck::cast_slice(&rotate_indices),
             usage: wgpu::BufferUsages::INDEX,
         });
 
@@ -233,9 +256,12 @@ impl GizmoRenderer {
 
         Self {
             pipeline,
-            vertex_buffer,
-            index_buffer,
-            index_count,
+            translate_vertex_buffer,
+            translate_index_buffer,
+            translate_index_count,
+            rotate_vertex_buffer,
+            rotate_index_buffer,
+            rotate_index_count,
             instance_buffer,
             bind_group,
             visible: false,
@@ -278,6 +304,11 @@ impl GizmoRenderer {
         self.visible = false;
     }
 
+    /// Set gizmo mode
+    pub fn set_mode(&mut self, mode: GizmoMode) {
+        self.mode = mode;
+    }
+
     pub fn render<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>) {
         if !self.visible {
             return;
@@ -285,15 +316,46 @@ impl GizmoRenderer {
 
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_bind_group(0, &self.bind_group, &[]);
-        render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
-        render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-        render_pass.draw_indexed(0..self.index_count, 0, 0..1);
+
+        // Select buffers based on mode
+        match self.mode {
+            GizmoMode::Translate => {
+                render_pass.set_vertex_buffer(0, self.translate_vertex_buffer.slice(..));
+                render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+                render_pass.set_index_buffer(
+                    self.translate_index_buffer.slice(..),
+                    wgpu::IndexFormat::Uint32,
+                );
+                render_pass.draw_indexed(0..self.translate_index_count, 0, 0..1);
+            }
+            GizmoMode::Rotate => {
+                render_pass.set_vertex_buffer(0, self.rotate_vertex_buffer.slice(..));
+                render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+                render_pass.set_index_buffer(
+                    self.rotate_index_buffer.slice(..),
+                    wgpu::IndexFormat::Uint32,
+                );
+                render_pass.draw_indexed(0..self.rotate_index_count, 0, 0..1);
+            }
+        }
     }
 
     /// Check if a ray intersects with a gizmo axis handle.
     /// Returns the closest intersecting axis.
     pub fn hit_test(
+        &self,
+        ray_origin: Vec3,
+        ray_dir: Vec3,
+        gizmo_pos: Vec3,
+        scale: f32,
+    ) -> GizmoAxis {
+        match self.mode {
+            GizmoMode::Translate => self.hit_test_translate(ray_origin, ray_dir, gizmo_pos, scale),
+            GizmoMode::Rotate => self.hit_test_rotate(ray_origin, ray_dir, gizmo_pos, scale),
+        }
+    }
+
+    fn hit_test_translate(
         &self,
         ray_origin: Vec3,
         ray_dir: Vec3,
@@ -321,6 +383,42 @@ impl GizmoRenderer {
                 axis_start,
                 axis_end,
                 handle_radius,
+            ) {
+                if dist < closest_dist {
+                    closest_dist = dist;
+                    closest_axis = axis;
+                }
+            }
+        }
+
+        closest_axis
+    }
+
+    fn hit_test_rotate(
+        &self,
+        ray_origin: Vec3,
+        ray_dir: Vec3,
+        gizmo_pos: Vec3,
+        scale: f32,
+    ) -> GizmoAxis {
+        let ring_radius = constants::RING_RADIUS * scale;
+        let hit_thickness = constants::RING_HIT_THICKNESS * scale;
+
+        let mut closest_axis = GizmoAxis::None;
+        let mut closest_dist = f32::MAX;
+
+        for (axis, normal) in [
+            (GizmoAxis::X, Vec3::X),
+            (GizmoAxis::Y, Vec3::Y),
+            (GizmoAxis::Z, Vec3::Z),
+        ] {
+            if let Some(dist) = collision::ray_ring_intersection(
+                ray_origin,
+                ray_dir,
+                gizmo_pos,
+                normal,
+                ring_radius,
+                hit_thickness,
             ) {
                 if dist < closest_dist {
                     closest_dist = dist;

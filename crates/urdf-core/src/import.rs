@@ -331,6 +331,64 @@ pub fn import_urdf(urdf_path: &Path, options: &ImportOptions) -> Result<Project,
             .insert(*child_link_id, (joint_id, *parent_link_id));
     }
 
+    // Create joint points on parts from joint information
+    for joint in assembly.joints.values_mut() {
+        // Get parent and child link info
+        let parent_part_id = assembly.links.get(&joint.parent_link).and_then(|l| l.part_id);
+        let child_part_id = assembly.links.get(&joint.child_link).and_then(|l| l.part_id);
+        let child_link_name = assembly
+            .links
+            .get(&joint.child_link)
+            .map(|l| l.name.clone())
+            .unwrap_or_default();
+        let parent_link_name = assembly
+            .links
+            .get(&joint.parent_link)
+            .map(|l| l.name.clone())
+            .unwrap_or_default();
+
+        // Create joint point on parent part (at origin, since joint origin is relative to parent)
+        if let Some(part_id) = parent_part_id {
+            if let Some(part) = parts.iter_mut().find(|p| p.id == part_id) {
+                let jp = crate::part::JointPoint {
+                    id: Uuid::new_v4(),
+                    name: format!("joint_to_{}", child_link_name),
+                    position: Vec3::new(joint.origin.xyz[0], joint.origin.xyz[1], joint.origin.xyz[2]),
+                    orientation: glam::Quat::from_euler(
+                        glam::EulerRot::XYZ,
+                        joint.origin.rpy[0],
+                        joint.origin.rpy[1],
+                        joint.origin.rpy[2],
+                    ),
+                    joint_type: joint.joint_type,
+                    axis: joint.axis,
+                    limits: joint.limits,
+                };
+                let jp_id = jp.id;
+                part.joint_points.push(jp);
+                joint.parent_joint_point = Some(jp_id);
+            }
+        }
+
+        // Create joint point on child part (at origin of child)
+        if let Some(part_id) = child_part_id {
+            if let Some(part) = parts.iter_mut().find(|p| p.id == part_id) {
+                let jp = crate::part::JointPoint {
+                    id: Uuid::new_v4(),
+                    name: format!("joint_from_{}", parent_link_name),
+                    position: Vec3::ZERO, // Child's joint point is at its own origin
+                    orientation: glam::Quat::IDENTITY,
+                    joint_type: joint.joint_type,
+                    axis: joint.axis,
+                    limits: joint.limits,
+                };
+                let jp_id = jp.id;
+                part.joint_points.push(jp);
+                joint.child_joint_point = Some(jp_id);
+            }
+        }
+    }
+
     // Update world transforms
     assembly.update_world_transforms();
 

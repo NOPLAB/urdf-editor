@@ -1,10 +1,11 @@
 //! Gizmo geometry generation
 //!
 //! This module contains the geometry generation functions for the transform gizmo.
-//! It generates arrow meshes for the X, Y, and Z axes.
+//! It generates arrow meshes for translation and ring meshes for rotation.
 
 use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Vec3};
+use std::f32::consts::{FRAC_PI_2, TAU};
 
 use crate::constants::gizmo::{self, colors};
 
@@ -128,6 +129,80 @@ pub fn generate_translation_gizmo() -> (Vec<GizmoVertex>, Vec<u32>) {
             let i0 = cone_base_index + 1 + i;
             let i1 = cone_base_index + 1 + (i + 1);
             indices.extend_from_slice(&[center_index, i0, i1]);
+        }
+    }
+
+    (vertices, indices)
+}
+
+/// Generate rotation gizmo geometry (3 rings for X, Y, Z axes).
+///
+/// Each ring is a torus centered at origin, perpendicular to its axis.
+/// Returns (vertices, indices) for indexed triangle rendering.
+pub fn generate_rotation_gizmo() -> (Vec<GizmoVertex>, Vec<u32>) {
+    let mut vertices = Vec::new();
+    let mut indices = Vec::new();
+
+    let ring_radius = gizmo::RING_RADIUS;
+    let tube_radius = gizmo::RING_THICKNESS;
+    let ring_segments = gizmo::RING_SEGMENTS;
+    let tube_segments = gizmo::RING_TUBE_SEGMENTS;
+
+    // Generate ring for each axis
+    for (axis_id, (color, rotation)) in [
+        // X-axis: ring in YZ plane (rotate around X)
+        (colors::X_AXIS, Mat4::from_rotation_z(-FRAC_PI_2)),
+        // Y-axis: ring in XZ plane (no rotation needed)
+        (colors::Y_AXIS, Mat4::IDENTITY),
+        // Z-axis: ring in XY plane (rotate around Z then X)
+        (colors::Z_AXIS, Mat4::from_rotation_x(FRAC_PI_2)),
+    ]
+    .iter()
+    .enumerate()
+    {
+        let base_index = vertices.len() as u32;
+
+        // Generate torus vertices
+        for i in 0..=ring_segments {
+            let ring_angle = (i as f32 / ring_segments as f32) * TAU;
+            let ring_cos = ring_angle.cos();
+            let ring_sin = ring_angle.sin();
+
+            // Center of tube at this ring position
+            let tube_center = Vec3::new(ring_cos * ring_radius, 0.0, ring_sin * ring_radius);
+
+            for j in 0..=tube_segments {
+                let tube_angle = (j as f32 / tube_segments as f32) * TAU;
+                let tube_cos = tube_angle.cos();
+                let tube_sin = tube_angle.sin();
+
+                // Position on the tube surface
+                let local_pos = Vec3::new(
+                    tube_center.x + ring_cos * tube_cos * tube_radius,
+                    tube_sin * tube_radius,
+                    tube_center.z + ring_sin * tube_cos * tube_radius,
+                );
+
+                let pos = rotation.transform_point3(local_pos);
+                vertices.push(GizmoVertex {
+                    position: pos.into(),
+                    color: *color,
+                    axis_id: axis_id as u32,
+                });
+            }
+        }
+
+        // Generate torus indices
+        let tube_verts = tube_segments + 1;
+        for i in 0..ring_segments {
+            for j in 0..tube_segments {
+                let i0 = base_index + i * tube_verts + j;
+                let i1 = base_index + i * tube_verts + (j + 1);
+                let i2 = base_index + (i + 1) * tube_verts + j;
+                let i3 = base_index + (i + 1) * tube_verts + (j + 1);
+
+                indices.extend_from_slice(&[i0, i2, i1, i1, i2, i3]);
+            }
         }
     }
 

@@ -2,12 +2,12 @@
 
 use std::sync::Arc;
 
-use glam::{Mat4, Vec3};
+use glam::{Mat4, Quat, Vec3};
 use parking_lot::Mutex;
 use uuid::Uuid;
 
 use urdf_core::Part;
-use urdf_renderer::{axis::AxisInstance, marker::MarkerInstance, GizmoAxis, Renderer};
+use urdf_renderer::{axis::AxisInstance, marker::MarkerInstance, GizmoAxis, GizmoMode, Renderer};
 
 /// Render texture for viewport
 struct RenderTexture {
@@ -19,12 +19,19 @@ struct RenderTexture {
     height: u32,
 }
 
+/// Gizmo transform result from drag operation
+pub enum GizmoTransform {
+    Translation(Vec3),
+    Rotation(Quat),
+}
+
 /// Gizmo interaction state
 #[derive(Default)]
 pub struct GizmoInteraction {
     pub dragging: bool,
     pub drag_axis: GizmoAxis,
     pub drag_start_pos: Vec3,
+    pub drag_start_angle: f32,
     pub part_start_transform: Mat4,
     pub part_id: Option<Uuid>,
     pub selected_joint_point: Option<usize>,
@@ -303,31 +310,74 @@ impl ViewportState {
             .camera()
             .screen_to_ray(screen_x, screen_y, width, height);
 
-        // Calculate intersection point with the axis plane
-        let plane_normal = self.get_drag_plane_normal(axis);
+        let mode = self.renderer.gizmo_mode();
 
-        if let Some(point) =
-            ray_plane_intersection(ray_origin, ray_dir, self.gizmo.gizmo_position, plane_normal)
-        {
-            self.gizmo.dragging = true;
-            self.gizmo.drag_axis = axis;
-            self.gizmo.drag_start_pos = point;
-            self.renderer.set_gizmo_highlight(&self.queue, axis);
+        match mode {
+            GizmoMode::Translate => {
+                // Calculate intersection point with the axis plane
+                let plane_normal = self.get_drag_plane_normal(axis);
+
+                if let Some(point) = ray_plane_intersection(
+                    ray_origin,
+                    ray_dir,
+                    self.gizmo.gizmo_position,
+                    plane_normal,
+                ) {
+                    self.gizmo.dragging = true;
+                    self.gizmo.drag_axis = axis;
+                    self.gizmo.drag_start_pos = point;
+                    self.renderer.set_gizmo_highlight(&self.queue, axis);
+                }
+            }
+            GizmoMode::Rotate => {
+                // For rotation, intersect with the plane perpendicular to the rotation axis
+                let rotation_axis = axis.direction();
+
+                if let Some(point) = ray_plane_intersection(
+                    ray_origin,
+                    ray_dir,
+                    self.gizmo.gizmo_position,
+                    rotation_axis,
+                ) {
+                    self.gizmo.dragging = true;
+                    self.gizmo.drag_axis = axis;
+                    self.gizmo.drag_start_pos = point;
+                    // Calculate initial angle from gizmo center
+                    let offset = point - self.gizmo.gizmo_position;
+                    self.gizmo.drag_start_angle = self.angle_on_plane(offset, axis);
+                    self.renderer.set_gizmo_highlight(&self.queue, axis);
+                }
+            }
         }
     }
 
-    /// Update gizmo drag - returns the translation delta if dragging
+    /// Update gizmo drag - returns the transform delta if dragging
     pub fn update_gizmo_drag(
         &mut self,
         screen_x: f32,
         screen_y: f32,
         width: f32,
         height: f32,
-    ) -> Option<Vec3> {
+    ) -> Option<GizmoTransform> {
         if !self.gizmo.dragging {
             return None;
         }
 
+        let mode = self.renderer.gizmo_mode();
+
+        match mode {
+            GizmoMode::Translate => self.update_translate_drag(screen_x, screen_y, width, height),
+            GizmoMode::Rotate => self.update_rotate_drag(screen_x, screen_y, width, height),
+        }
+    }
+
+    fn update_translate_drag(
+        &mut self,
+        screen_x: f32,
+        screen_y: f32,
+        width: f32,
+        height: f32,
+    ) -> Option<GizmoTransform> {
         let (ray_origin, ray_dir) = self
             .renderer
             .camera()
@@ -351,10 +401,52 @@ impl ViewportState {
             self.renderer
                 .show_gizmo(&self.queue, self.gizmo.gizmo_position, self.gizmo.gizmo_scale);
 
-            return Some(projected_delta);
+            return Some(GizmoTransform::Translation(projected_delta));
         }
 
         None
+    }
+
+    fn update_rotate_drag(
+        &mut self,
+        screen_x: f32,
+        screen_y: f32,
+        width: f32,
+        height: f32,
+    ) -> Option<GizmoTransform> {
+        let (ray_origin, ray_dir) = self
+            .renderer
+            .camera()
+            .screen_to_ray(screen_x, screen_y, width, height);
+        let rotation_axis = self.gizmo.drag_axis.direction();
+
+        if let Some(current_point) =
+            ray_plane_intersection(ray_origin, ray_dir, self.gizmo.gizmo_position, rotation_axis)
+        {
+            let offset = current_point - self.gizmo.gizmo_position;
+            let current_angle = self.angle_on_plane(offset, self.gizmo.drag_axis);
+            let angle_delta = current_angle - self.gizmo.drag_start_angle;
+
+            // Update start angle for next frame
+            self.gizmo.drag_start_angle = current_angle;
+
+            // Create rotation quaternion around the axis
+            let rotation = Quat::from_axis_angle(rotation_axis, angle_delta);
+
+            return Some(GizmoTransform::Rotation(rotation));
+        }
+
+        None
+    }
+
+    /// Calculate angle of a point on a plane perpendicular to the given axis
+    fn angle_on_plane(&self, offset: Vec3, axis: GizmoAxis) -> f32 {
+        match axis {
+            GizmoAxis::X => offset.z.atan2(offset.y),
+            GizmoAxis::Y => offset.x.atan2(offset.z),
+            GizmoAxis::Z => offset.y.atan2(offset.x),
+            GizmoAxis::None => 0.0,
+        }
     }
 
     /// End gizmo drag

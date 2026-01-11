@@ -11,7 +11,7 @@ use urdf_core::Part;
 use crate::axis::{AxisInstance, AxisRenderer};
 use crate::camera::Camera;
 use crate::constants::viewport::CLEAR_COLOR;
-use crate::gizmo::{GizmoAxis, GizmoRenderer};
+use crate::gizmo::{GizmoAxis, GizmoMode, GizmoRenderer};
 use crate::grid::GridRenderer;
 use crate::marker::{MarkerInstance, MarkerRenderer};
 use crate::mesh::{MeshData, MeshRenderer};
@@ -361,6 +361,16 @@ impl Renderer {
         let distance_scale = camera_distance * 0.15;
         let adjusted_scale = scale * distance_scale;
         self.gizmo_renderer.hit_test(ray_origin, ray_dir, gizmo_pos, adjusted_scale)
+    }
+
+    /// Set gizmo mode
+    pub fn set_gizmo_mode(&mut self, mode: GizmoMode) {
+        self.gizmo_renderer.set_mode(mode);
+    }
+
+    /// Get current gizmo mode
+    pub fn gizmo_mode(&self) -> GizmoMode {
+        self.gizmo_renderer.mode
     }
 
     /// Render the scene.

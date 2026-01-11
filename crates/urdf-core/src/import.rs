@@ -9,9 +9,10 @@ use glam::Vec3;
 use uuid::Uuid;
 
 use crate::assembly::{
-    Assembly, CollisionElement, CollisionProperties, GeometryType, InertialProperties, Joint,
-    JointDynamics, JointMimic, Link, Pose, VisualElement, VisualProperties,
+    Assembly, CollisionElement, CollisionProperties, InertialProperties, Joint, JointDynamics,
+    JointMimic, Link, Pose, VisualElement, VisualProperties,
 };
+use crate::geometry::GeometryType;
 use crate::inertia::InertiaMatrix;
 use crate::mesh::{MeshFormat, load_mesh};
 use crate::part::{JointLimits, JointType, Part};
@@ -218,9 +219,9 @@ pub fn import_urdf(urdf_path: &Path, options: &ImportOptions) -> Result<Project,
 
         // Process inertial properties
         let inertial_props = InertialProperties {
-            origin: convert_pose(&urdf_link.inertial.origin),
+            origin: Pose::from(&urdf_link.inertial.origin),
             mass: urdf_link.inertial.mass.value as f32,
-            inertia: convert_inertia(&urdf_link.inertial.inertia),
+            inertia: InertiaMatrix::from(&urdf_link.inertial.inertia),
         };
 
         // Process collision properties (supports multiple collision elements)
@@ -290,10 +291,10 @@ pub fn import_urdf(urdf_path: &Path, options: &ImportOptions) -> Result<Project,
         let joint = Joint {
             id: Uuid::new_v4(),
             name: urdf_joint.name.clone(),
-            joint_type: convert_joint_type(&urdf_joint.joint_type),
+            joint_type: JointType::from(&urdf_joint.joint_type),
             parent_link: *parent_link_id,
             child_link: *child_link_id,
-            origin: convert_pose(&urdf_joint.origin),
+            origin: Pose::from(&urdf_joint.origin),
             axis: Vec3::new(
                 urdf_joint.axis.xyz.0[0] as f32,
                 urdf_joint.axis.xyz.0[1] as f32,
@@ -443,7 +444,7 @@ fn process_visual_geometry(
     // Process first visual element (primary)
     let first_visual = &visuals[0];
     let (color, material_name) = extract_material_info(first_visual, material_colors, options);
-    let origin = convert_pose(&first_visual.origin);
+    let origin = Pose::from(&first_visual.origin);
 
     // Create part from first visual's geometry
     let mut part = process_geometry(
@@ -465,8 +466,8 @@ fn process_visual_geometry(
     let mut additional_elements = Vec::new();
     for (i, visual) in visuals.iter().skip(1).enumerate() {
         let (elem_color, elem_material) = extract_material_info(visual, material_colors, options);
-        let elem_origin = convert_pose(&visual.origin);
-        let elem_geometry = convert_geometry_type(&visual.geometry);
+        let elem_origin = Pose::from(&visual.origin);
+        let elem_geometry = Some(GeometryType::from(&visual.geometry));
 
         additional_elements.push(VisualElement {
             name: visual
@@ -520,27 +521,6 @@ fn extract_material_info(
         (color, name)
     } else {
         (options.default_color, None)
-    }
-}
-
-/// Convert URDF geometry to internal GeometryType
-fn convert_geometry_type(geometry: &urdf_rs::Geometry) -> Option<GeometryType> {
-    match geometry {
-        urdf_rs::Geometry::Mesh { .. } => Some(GeometryType::Mesh),
-        urdf_rs::Geometry::Box { size } => Some(GeometryType::Box {
-            size: [size.0[0] as f32, size.0[1] as f32, size.0[2] as f32],
-        }),
-        urdf_rs::Geometry::Cylinder { radius, length } => Some(GeometryType::Cylinder {
-            radius: *radius as f32,
-            length: *length as f32,
-        }),
-        urdf_rs::Geometry::Sphere { radius } => Some(GeometryType::Sphere {
-            radius: *radius as f32,
-        }),
-        urdf_rs::Geometry::Capsule { radius, length } => Some(GeometryType::Capsule {
-            radius: *radius as f32,
-            length: *length as f32,
-        }),
     }
 }
 
@@ -639,13 +619,13 @@ fn process_collision_geometry(collisions: &[urdf_rs::Collision]) -> CollisionPro
 
     // First collision element (primary)
     let first_collision = &collisions[0];
-    let origin = convert_pose(&first_collision.origin);
+    let origin = Pose::from(&first_collision.origin);
 
     // Additional collision elements
     let mut additional_elements = Vec::new();
     for (i, collision) in collisions.iter().skip(1).enumerate() {
-        let elem_origin = convert_pose(&collision.origin);
-        let elem_geometry = convert_geometry_type(&collision.geometry);
+        let elem_origin = Pose::from(&collision.origin);
+        let elem_geometry = Some(GeometryType::from(&collision.geometry));
 
         additional_elements.push(CollisionElement {
             name: collision
@@ -801,75 +781,34 @@ fn apply_scale(part: &mut Part, scale: [f32; 3]) {
     part.calculate_bounding_box();
 }
 
-/// Convert urdf_rs::Pose to internal Pose
-fn convert_pose(urdf_pose: &urdf_rs::Pose) -> Pose {
-    Pose {
-        xyz: [
-            urdf_pose.xyz.0[0] as f32,
-            urdf_pose.xyz.0[1] as f32,
-            urdf_pose.xyz.0[2] as f32,
-        ],
-        rpy: [
-            urdf_pose.rpy.0[0] as f32,
-            urdf_pose.rpy.0[1] as f32,
-            urdf_pose.rpy.0[2] as f32,
-        ],
-    }
-}
-
-/// Convert urdf_rs::JointType to internal JointType
-fn convert_joint_type(urdf_type: &urdf_rs::JointType) -> JointType {
-    match urdf_type {
-        urdf_rs::JointType::Fixed => JointType::Fixed,
-        urdf_rs::JointType::Revolute => JointType::Revolute,
-        urdf_rs::JointType::Continuous => JointType::Continuous,
-        urdf_rs::JointType::Prismatic => JointType::Prismatic,
-        urdf_rs::JointType::Floating => JointType::Floating,
-        urdf_rs::JointType::Planar => JointType::Planar,
-        urdf_rs::JointType::Spherical => JointType::Floating, // Approximate as floating
-    }
-}
-
-/// Convert urdf_rs::Inertia to internal InertiaMatrix
-fn convert_inertia(urdf_inertia: &urdf_rs::Inertia) -> InertiaMatrix {
-    InertiaMatrix {
-        ixx: urdf_inertia.ixx as f32,
-        ixy: urdf_inertia.ixy as f32,
-        ixz: urdf_inertia.ixz as f32,
-        iyy: urdf_inertia.iyy as f32,
-        iyz: urdf_inertia.iyz as f32,
-        izz: urdf_inertia.izz as f32,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_convert_pose() {
+    fn test_pose_from() {
         let urdf_pose = urdf_rs::Pose {
             xyz: urdf_rs::Vec3([1.0, 2.0, 3.0]),
             rpy: urdf_rs::Vec3([0.1, 0.2, 0.3]),
         };
 
-        let pose = convert_pose(&urdf_pose);
+        let pose = Pose::from(&urdf_pose);
         assert_eq!(pose.xyz, [1.0, 2.0, 3.0]);
         assert_eq!(pose.rpy, [0.1, 0.2, 0.3]);
     }
 
     #[test]
-    fn test_convert_joint_type() {
+    fn test_joint_type_from() {
         assert!(matches!(
-            convert_joint_type(&urdf_rs::JointType::Fixed),
+            JointType::from(&urdf_rs::JointType::Fixed),
             JointType::Fixed
         ));
         assert!(matches!(
-            convert_joint_type(&urdf_rs::JointType::Revolute),
+            JointType::from(&urdf_rs::JointType::Revolute),
             JointType::Revolute
         ));
         assert!(matches!(
-            convert_joint_type(&urdf_rs::JointType::Continuous),
+            JointType::from(&urdf_rs::JointType::Continuous),
             JointType::Continuous
         ));
     }

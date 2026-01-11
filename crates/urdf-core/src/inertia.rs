@@ -27,6 +27,19 @@ impl Default for InertiaMatrix {
     }
 }
 
+impl From<&urdf_rs::Inertia> for InertiaMatrix {
+    fn from(urdf_inertia: &urdf_rs::Inertia) -> Self {
+        Self {
+            ixx: urdf_inertia.ixx as f32,
+            ixy: urdf_inertia.ixy as f32,
+            ixz: urdf_inertia.ixz as f32,
+            iyy: urdf_inertia.iyy as f32,
+            iyz: urdf_inertia.iyz as f32,
+            izz: urdf_inertia.izz as f32,
+        }
+    }
+}
+
 impl InertiaMatrix {
     /// Create an inertia matrix for a solid box
     pub fn box_inertia(mass: f32, width: f32, height: f32, depth: f32) -> Self {

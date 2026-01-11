@@ -2,7 +2,8 @@
 
 use std::collections::HashMap;
 
-use crate::assembly::{Assembly, GeometryType, Joint, Link, Pose};
+use crate::assembly::{Assembly, Joint, Link, Pose};
+use crate::geometry::GeometryType;
 use crate::part::{JointType, Part};
 use crate::stl::save_stl;
 
@@ -191,7 +192,7 @@ fn write_link(urdf: &mut String, link: &Link, part: Option<&Part>, mesh_uri: Opt
 
         // Additional Visual elements
         for elem in &link.visual.elements {
-            let geom_str = elem.geometry.as_ref().map(geometry_to_string);
+            let geom_str = elem.geometry.as_ref().map(GeometryType::to_urdf_xml);
             write_visual_element(
                 urdf,
                 elem.name.as_deref(),
@@ -208,7 +209,7 @@ fn write_link(urdf: &mut String, link: &Link, part: Option<&Part>, mesh_uri: Opt
 
         // Additional Collision elements
         for elem in &link.collision.elements {
-            let geom_str = elem.geometry.as_ref().map(geometry_to_string);
+            let geom_str = elem.geometry.as_ref().map(GeometryType::to_urdf_xml);
             write_collision_element(
                 urdf,
                 elem.name.as_deref(),
@@ -307,25 +308,6 @@ fn write_collision_element(
         ));
     }
     urdf.push_str("    </collision>\n");
-}
-
-fn geometry_to_string(geometry: &GeometryType) -> String {
-    match geometry {
-        GeometryType::Mesh => "<!-- mesh -->".to_string(),
-        GeometryType::Box { size } => {
-            format!("<box size=\"{} {} {}\"/>", size[0], size[1], size[2])
-        }
-        GeometryType::Cylinder { radius, length } => {
-            format!("<cylinder radius=\"{}\" length=\"{}\"/>", radius, length)
-        }
-        GeometryType::Sphere { radius } => {
-            format!("<sphere radius=\"{}\"/>", radius)
-        }
-        GeometryType::Capsule { radius, length } => {
-            // Capsule is not standard URDF, approximate as cylinder
-            format!("<cylinder radius=\"{}\" length=\"{}\"/>", radius, length)
-        }
-    }
 }
 
 fn write_joint(urdf: &mut String, joint: &Joint, parent_name: &str, child_name: &str) {

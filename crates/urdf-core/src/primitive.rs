@@ -97,12 +97,12 @@ pub fn generate_box_mesh(size: [f32; 3]) -> MeshData {
 /// # Arguments
 /// * `radius` - Cylinder radius
 /// * `length` - Cylinder length (height along Z)
-/// * `segments` - Number of segments around circumference (default: 32)
 ///
 /// # Returns
 /// (vertices, normals, indices)
 pub fn generate_cylinder_mesh(radius: f32, length: f32) -> MeshData {
-    generate_cylinder_mesh_with_segments(radius, length, 32)
+    use crate::constants::CYLINDER_SEGMENTS;
+    generate_cylinder_mesh_with_segments(radius, length, CYLINDER_SEGMENTS)
 }
 
 /// Generate a cylinder mesh with custom segment count
@@ -197,7 +197,8 @@ pub fn generate_cylinder_mesh_with_segments(radius: f32, length: f32, segments: 
 /// # Returns
 /// (vertices, normals, indices)
 pub fn generate_sphere_mesh(radius: f32) -> MeshData {
-    generate_sphere_mesh_with_segments(radius, 16, 32)
+    use crate::constants::{SPHERE_LAT_SEGMENTS, SPHERE_LON_SEGMENTS};
+    generate_sphere_mesh_with_segments(radius, SPHERE_LAT_SEGMENTS, SPHERE_LON_SEGMENTS)
 }
 
 /// Generate a UV sphere mesh with custom resolution

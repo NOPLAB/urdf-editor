@@ -131,6 +131,36 @@ impl Part {
     pub fn get_joint_point_mut(&mut self, id: Uuid) -> Option<&mut JointPoint> {
         self.joint_points.iter_mut().find(|p| p.id == id)
     }
+
+    /// Get read-only access to joint points slice
+    pub fn joint_points(&self) -> &[JointPoint] {
+        &self.joint_points
+    }
+
+    /// Get mutable access to joint points (for batch operations)
+    pub fn joint_points_mut(&mut self) -> &mut Vec<JointPoint> {
+        &mut self.joint_points
+    }
+
+    /// Number of joint points
+    pub fn joint_point_count(&self) -> usize {
+        self.joint_points.len()
+    }
+
+    /// Check if more joint points can be added
+    pub fn can_add_joint_point(&self) -> bool {
+        self.joint_points.len() < MAX_JOINT_POINTS
+    }
+
+    /// Find a joint point by name
+    pub fn find_joint_point_by_name(&self, name: &str) -> Option<&JointPoint> {
+        self.joint_points.iter().find(|p| p.name == name)
+    }
+
+    /// Find a mutable joint point by name
+    pub fn find_joint_point_by_name_mut(&mut self, name: &str) -> Option<&mut JointPoint> {
+        self.joint_points.iter_mut().find(|p| p.name == name)
+    }
 }
 
 /// Joint connection point on a part
@@ -229,6 +259,20 @@ impl JointType {
     }
 }
 
+impl From<&urdf_rs::JointType> for JointType {
+    fn from(urdf_type: &urdf_rs::JointType) -> Self {
+        match urdf_type {
+            urdf_rs::JointType::Fixed => JointType::Fixed,
+            urdf_rs::JointType::Revolute => JointType::Revolute,
+            urdf_rs::JointType::Continuous => JointType::Continuous,
+            urdf_rs::JointType::Prismatic => JointType::Prismatic,
+            urdf_rs::JointType::Floating => JointType::Floating,
+            urdf_rs::JointType::Planar => JointType::Planar,
+            urdf_rs::JointType::Spherical => JointType::Floating, // Approximate as floating
+        }
+    }
+}
+
 /// Joint limits
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct JointLimits {
@@ -249,6 +293,32 @@ impl Default for JointLimits {
             upper: std::f32::consts::PI,
             effort: 100.0,
             velocity: 1.0,
+        }
+    }
+}
+
+impl JointLimits {
+    /// Create default limits for revolute joints (-PI to PI)
+    pub fn default_revolute() -> Self {
+        Self::default()
+    }
+
+    /// Create default limits for prismatic joints (-1m to 1m)
+    pub fn default_prismatic() -> Self {
+        Self {
+            lower: -1.0,
+            upper: 1.0,
+            effort: 100.0,
+            velocity: 1.0,
+        }
+    }
+
+    /// Create limits with specified range
+    pub fn with_range(lower: f32, upper: f32) -> Self {
+        Self {
+            lower,
+            upper,
+            ..Self::default()
         }
     }
 }

@@ -95,8 +95,7 @@ fn index_mesh_with_scale(
     let mut indices: Vec<u32> = Vec::new();
     let mut normals: Vec<[f32; 3]> = Vec::new();
 
-    // Precision for vertex comparison (multiply by this, then round to int)
-    const PRECISION: f32 = 10000.0;
+    use crate::constants::STL_VERTEX_PRECISION;
 
     for face in &mesh.faces {
         let normal = face.normal;
@@ -109,9 +108,9 @@ fn index_mesh_with_scale(
 
             // Quantize for comparison (use scaled precision)
             let key = [
-                (v[0] * PRECISION) as i32,
-                (v[1] * PRECISION) as i32,
-                (v[2] * PRECISION) as i32,
+                (v[0] * STL_VERTEX_PRECISION) as i32,
+                (v[1] * STL_VERTEX_PRECISION) as i32,
+                (v[2] * STL_VERTEX_PRECISION) as i32,
             ];
 
             let index = if let Some(&existing_idx) = vertex_map.get(&key) {

@@ -7,7 +7,9 @@
 //! - Project: Serializable project file
 
 pub mod assembly;
+pub mod constants;
 pub mod export;
+pub mod geometry;
 pub mod import;
 pub mod inertia;
 pub mod mesh;
@@ -17,7 +19,9 @@ pub mod project;
 pub mod stl;
 
 pub use assembly::*;
+pub use constants::*;
 pub use export::*;
+pub use geometry::*;
 pub use import::*;
 pub use inertia::*;
 pub use mesh::*;

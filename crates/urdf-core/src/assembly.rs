@@ -6,6 +6,7 @@ use glam::{Mat4, Quat, Vec3};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::geometry::GeometryType;
 use crate::inertia::InertiaMatrix;
 use crate::part::{JointLimits, JointType, Part};
 
@@ -102,16 +103,6 @@ pub struct CollisionElement {
     pub geometry: Option<GeometryType>,
 }
 
-/// Geometry type for visual/collision elements
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum GeometryType {
-    Mesh,
-    Box { size: [f32; 3] },
-    Cylinder { radius: f32, length: f32 },
-    Sphere { radius: f32 },
-    Capsule { radius: f32, length: f32 },
-}
-
 /// Visual properties for a link (supports multiple visual elements)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VisualProperties {
@@ -201,6 +192,33 @@ impl Pose {
         let translation = Vec3::from(self.xyz);
         let rotation = Quat::from_euler(glam::EulerRot::XYZ, self.rpy[0], self.rpy[1], self.rpy[2]);
         Mat4::from_rotation_translation(rotation, translation)
+    }
+
+    /// Convert to quaternion representation
+    pub fn to_quat(&self) -> Quat {
+        Quat::from_euler(glam::EulerRot::XYZ, self.rpy[0], self.rpy[1], self.rpy[2])
+    }
+
+    /// Get position as Vec3
+    pub fn position(&self) -> Vec3 {
+        Vec3::from(self.xyz)
+    }
+}
+
+impl From<&urdf_rs::Pose> for Pose {
+    fn from(urdf_pose: &urdf_rs::Pose) -> Self {
+        Self {
+            xyz: [
+                urdf_pose.xyz.0[0] as f32,
+                urdf_pose.xyz.0[1] as f32,
+                urdf_pose.xyz.0[2] as f32,
+            ],
+            rpy: [
+                urdf_pose.rpy.0[0] as f32,
+                urdf_pose.rpy.0[1] as f32,
+                urdf_pose.rpy.0[2] as f32,
+            ],
+        }
     }
 }
 
@@ -318,6 +336,177 @@ impl Joint {
             mimic: None,
             parent_joint_point: None,
             child_joint_point: None,
+        }
+    }
+
+    /// Create a builder for constructing joints with fluent API
+    pub fn builder(name: impl Into<String>, parent: Uuid, child: Uuid) -> JointBuilder {
+        JointBuilder::new(name, parent, child)
+    }
+}
+
+/// Builder for creating joints with fluent API
+#[derive(Debug, Clone)]
+pub struct JointBuilder {
+    name: String,
+    joint_type: JointType,
+    parent_link: Uuid,
+    child_link: Uuid,
+    origin: Pose,
+    axis: Vec3,
+    limits: Option<JointLimits>,
+    dynamics: Option<JointDynamics>,
+    mimic: Option<JointMimic>,
+    parent_joint_point: Option<Uuid>,
+    child_joint_point: Option<Uuid>,
+}
+
+impl JointBuilder {
+    /// Create a new joint builder
+    pub fn new(name: impl Into<String>, parent: Uuid, child: Uuid) -> Self {
+        Self {
+            name: name.into(),
+            joint_type: JointType::Fixed,
+            parent_link: parent,
+            child_link: child,
+            origin: Pose::default(),
+            axis: Vec3::Z,
+            limits: None,
+            dynamics: None,
+            mimic: None,
+            parent_joint_point: None,
+            child_joint_point: None,
+        }
+    }
+
+    /// Set the joint type
+    pub fn joint_type(mut self, joint_type: JointType) -> Self {
+        self.joint_type = joint_type;
+        self
+    }
+
+    /// Set as a fixed joint
+    pub fn fixed(mut self) -> Self {
+        self.joint_type = JointType::Fixed;
+        self
+    }
+
+    /// Set as a revolute joint with default limits
+    pub fn revolute(mut self) -> Self {
+        self.joint_type = JointType::Revolute;
+        if self.limits.is_none() {
+            self.limits = Some(JointLimits::default_revolute());
+        }
+        self
+    }
+
+    /// Set as a continuous joint
+    pub fn continuous(mut self) -> Self {
+        self.joint_type = JointType::Continuous;
+        self
+    }
+
+    /// Set as a prismatic joint with default limits
+    pub fn prismatic(mut self) -> Self {
+        self.joint_type = JointType::Prismatic;
+        if self.limits.is_none() {
+            self.limits = Some(JointLimits::default_prismatic());
+        }
+        self
+    }
+
+    /// Set the joint origin
+    pub fn origin(mut self, pose: Pose) -> Self {
+        self.origin = pose;
+        self
+    }
+
+    /// Set the joint origin position
+    pub fn xyz(mut self, x: f32, y: f32, z: f32) -> Self {
+        self.origin.xyz = [x, y, z];
+        self
+    }
+
+    /// Set the joint origin rotation (roll, pitch, yaw)
+    pub fn rpy(mut self, roll: f32, pitch: f32, yaw: f32) -> Self {
+        self.origin.rpy = [roll, pitch, yaw];
+        self
+    }
+
+    /// Set the joint axis
+    pub fn axis(mut self, axis: Vec3) -> Self {
+        self.axis = axis.normalize();
+        self
+    }
+
+    /// Set the joint axis from x, y, z components
+    pub fn axis_xyz(mut self, x: f32, y: f32, z: f32) -> Self {
+        self.axis = Vec3::new(x, y, z).normalize();
+        self
+    }
+
+    /// Set the joint limits
+    pub fn limits(mut self, limits: JointLimits) -> Self {
+        self.limits = Some(limits);
+        self
+    }
+
+    /// Set joint limits with a range
+    pub fn limits_range(mut self, lower: f32, upper: f32) -> Self {
+        self.limits = Some(JointLimits::with_range(lower, upper));
+        self
+    }
+
+    /// Set the joint dynamics
+    pub fn dynamics(mut self, damping: f32, friction: f32) -> Self {
+        self.dynamics = Some(JointDynamics { damping, friction });
+        self
+    }
+
+    /// Set mimic configuration to follow another joint
+    pub fn mimic(mut self, joint_name: impl Into<String>) -> Self {
+        self.mimic = Some(JointMimic::new(joint_name));
+        self
+    }
+
+    /// Set mimic configuration with multiplier and offset
+    pub fn mimic_with_params(
+        mut self,
+        joint_name: impl Into<String>,
+        multiplier: f32,
+        offset: f32,
+    ) -> Self {
+        self.mimic = Some(JointMimic::with_params(joint_name, multiplier, offset));
+        self
+    }
+
+    /// Set the parent joint point reference
+    pub fn parent_joint_point(mut self, point_id: Uuid) -> Self {
+        self.parent_joint_point = Some(point_id);
+        self
+    }
+
+    /// Set the child joint point reference
+    pub fn child_joint_point(mut self, point_id: Uuid) -> Self {
+        self.child_joint_point = Some(point_id);
+        self
+    }
+
+    /// Build the joint
+    pub fn build(self) -> Joint {
+        Joint {
+            id: Uuid::new_v4(),
+            name: self.name,
+            joint_type: self.joint_type,
+            parent_link: self.parent_link,
+            child_link: self.child_link,
+            origin: self.origin,
+            axis: self.axis,
+            limits: self.limits,
+            dynamics: self.dynamics,
+            mimic: self.mimic,
+            parent_joint_point: self.parent_joint_point,
+            child_joint_point: self.child_joint_point,
         }
     }
 }
@@ -580,7 +769,8 @@ impl Assembly {
                 // Get joint position (defaults to 0)
                 let position = joint_positions.get(joint_id).copied().unwrap_or(0.0);
                 // Compute joint transform with position
-                let joint_transform = Self::compute_joint_transform(joint, position);
+                let joint_transform =
+                    Self::compute_joint_transform(&joint.joint_type, joint.axis, position);
                 parent_transform * joint.origin.to_mat4() * joint_transform
             } else {
                 parent_transform
@@ -606,16 +796,7 @@ impl Assembly {
     }
 
     /// Compute the transform for a joint at a given position
-    fn compute_joint_transform(joint: &Joint, position: f32) -> Mat4 {
-        Self::compute_joint_transform_static(&joint.joint_type, joint.axis, position)
-    }
-
-    /// Compute the transform for a joint at a given position (static version)
-    pub fn compute_joint_transform_static(
-        joint_type: &JointType,
-        axis: Vec3,
-        position: f32,
-    ) -> Mat4 {
+    pub fn compute_joint_transform(joint_type: &JointType, axis: Vec3, position: f32) -> Mat4 {
         match joint_type {
             JointType::Revolute | JointType::Continuous => {
                 // Rotation around the joint axis
@@ -705,6 +886,148 @@ impl Assembly {
                 self.collect_depth_first(*child_id, result);
             }
         }
+    }
+
+    // ============== Query Helpers ==============
+
+    /// Get a link's name by ID
+    pub fn get_link_name(&self, link_id: Uuid) -> Option<&str> {
+        self.links.get(&link_id).map(|l| l.name.as_str())
+    }
+
+    /// Get a joint's name by ID
+    pub fn get_joint_name(&self, joint_id: Uuid) -> Option<&str> {
+        self.joints.get(&joint_id).map(|j| j.name.as_str())
+    }
+
+    /// Find a link by name
+    pub fn find_link_by_name(&self, name: &str) -> Option<&Link> {
+        self.links.values().find(|l| l.name == name)
+    }
+
+    /// Find a joint by name
+    pub fn find_joint_by_name(&self, name: &str) -> Option<&Joint> {
+        self.joints.values().find(|j| j.name == name)
+    }
+
+    /// Find a link by its associated part ID
+    pub fn find_link_by_part(&self, part_id: Uuid) -> Option<&Link> {
+        self.links.values().find(|l| l.part_id == Some(part_id))
+    }
+
+    /// Get the chain of link IDs from a link to the root
+    pub fn get_chain_to_root(&self, link_id: Uuid) -> Vec<Uuid> {
+        let mut chain = vec![link_id];
+        let mut current = link_id;
+
+        while let Some((_, parent_id)) = self.parent.get(&current) {
+            chain.push(*parent_id);
+            current = *parent_id;
+        }
+
+        chain
+    }
+
+    /// Get the joint connecting a link to its parent
+    pub fn get_parent_joint(&self, link_id: Uuid) -> Option<&Joint> {
+        self.parent
+            .get(&link_id)
+            .and_then(|(joint_id, _)| self.joints.get(joint_id))
+    }
+
+    /// Get the parent link ID of a given link
+    pub fn get_parent_link_id(&self, link_id: Uuid) -> Option<Uuid> {
+        self.parent.get(&link_id).map(|(_, parent_id)| *parent_id)
+    }
+
+    /// Get the parent link of a given link
+    pub fn get_parent_link(&self, link_id: Uuid) -> Option<&Link> {
+        self.parent
+            .get(&link_id)
+            .and_then(|(_, parent_id)| self.links.get(parent_id))
+    }
+
+    /// Get all direct children of a link (returns vec of (joint_id, child_link_id))
+    pub fn get_children(&self, link_id: Uuid) -> Vec<(Uuid, Uuid)> {
+        self.children.get(&link_id).cloned().unwrap_or_default()
+    }
+
+    /// Get all descendant link IDs (breadth-first)
+    pub fn get_all_descendants(&self, link_id: Uuid) -> Vec<Uuid> {
+        let mut descendants = Vec::new();
+        let mut queue = vec![link_id];
+
+        while let Some(current) = queue.pop() {
+            if let Some(children) = self.children.get(&current) {
+                for (_, child_id) in children {
+                    descendants.push(*child_id);
+                    queue.push(*child_id);
+                }
+            }
+        }
+
+        descendants
+    }
+
+    /// Check if a link is an ancestor of another
+    pub fn is_ancestor(&self, ancestor_id: Uuid, descendant_id: Uuid) -> bool {
+        let chain = self.get_chain_to_root(descendant_id);
+        chain.contains(&ancestor_id)
+    }
+
+    /// Get link depth from root (root = 0)
+    pub fn get_link_depth(&self, link_id: Uuid) -> usize {
+        self.get_chain_to_root(link_id).len() - 1
+    }
+
+    /// Get all joints in the chain from a link to root
+    pub fn get_joints_to_root(&self, link_id: Uuid) -> Vec<&Joint> {
+        let mut joints = Vec::new();
+        let mut current = link_id;
+
+        while let Some((joint_id, parent_id)) = self.parent.get(&current) {
+            if let Some(joint) = self.joints.get(joint_id) {
+                joints.push(joint);
+            }
+            current = *parent_id;
+        }
+
+        joints
+    }
+
+    /// Get a link by ID (convenience method)
+    pub fn get_link(&self, link_id: Uuid) -> Option<&Link> {
+        self.links.get(&link_id)
+    }
+
+    /// Get a mutable link by ID
+    pub fn get_link_mut(&mut self, link_id: Uuid) -> Option<&mut Link> {
+        self.links.get_mut(&link_id)
+    }
+
+    /// Get a joint by ID (convenience method)
+    pub fn get_joint(&self, joint_id: Uuid) -> Option<&Joint> {
+        self.joints.get(&joint_id)
+    }
+
+    /// Get a mutable joint by ID
+    pub fn get_joint_mut(&mut self, joint_id: Uuid) -> Option<&mut Joint> {
+        self.joints.get_mut(&joint_id)
+    }
+
+    /// Count total number of links
+    pub fn link_count(&self) -> usize {
+        self.links.len()
+    }
+
+    /// Count total number of joints
+    pub fn joint_count(&self) -> usize {
+        self.joints.len()
+    }
+
+    /// Check if assembly is empty
+    pub fn is_empty(&self) -> bool {
+        self.links.is_empty()
     }
 }
 

@@ -299,7 +299,7 @@ fn sync_renderer_transforms(state: &AppState, ctx: &ActionContext) {
                     let current_axis = accumulated_rotation * *original_axis;
 
                     // Compute joint rotation with transformed axis
-                    let joint_rotation = urdf_core::Assembly::compute_joint_transform_static(
+                    let joint_rotation = urdf_core::Assembly::compute_joint_transform(
                         joint_type,
                         current_axis,
                         *joint_value,

@@ -1,0 +1,41 @@
+/* Custom gray minimal theme for RK Documentation - Nothing inspired */
+
+/* ===== Dark Mode (default) ===== */
+:root {
+  --sl-color-white: #e0e0e0;
+  --sl-color-gray-1: #c8c8c8;
+  --sl-color-gray-2: #a8a8a8;
+  --sl-color-gray-3: #707070;
+  --sl-color-gray-4: #505050;
+  --sl-color-gray-5: #2a2a2a;
+  --sl-color-gray-6: #1a1a1a;
+  --sl-color-black: #0e0e0e;
+
+  --sl-color-accent-low: #1a1a1a;
+  --sl-color-accent: #808080;
+  --sl-color-accent-high: #c0c0c0;
+}
+
+/* ===== Light Mode ===== */
+:root[data-theme='light'],
+[data-theme='light'] ::backdrop {
+  --sl-color-white: #1a1a1a;
+  --sl-color-gray-1: #2a2a2a;
+  --sl-color-gray-2: #404040;
+  --sl-color-gray-3: #606060;
+  --sl-color-gray-4: #888888;
+  --sl-color-gray-5: #b8b8b8;
+  --sl-color-gray-6: #d8d8d8;
+  --sl-color-gray-7: #e8e8e8;
+  --sl-color-black: #f0f0f0;
+
+  --sl-color-accent-low: #d8d8d8;
+  --sl-color-accent: #505050;
+  --sl-color-accent-high: #1a1a1a;
+}
+
+/* ===== Logo ===== */
+.site-title img {
+  height: 2rem;
+  width: auto;
+}

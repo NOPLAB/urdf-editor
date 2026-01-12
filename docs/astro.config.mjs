@@ -3,7 +3,7 @@ import starlight from '@astrojs/starlight';
 
 export default defineConfig({
   site: 'https://noplab.github.io',
-  base: '/rk/docs',
+  base: '/rk',
   integrations: [
     starlight({
       title: 'RK',

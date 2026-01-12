@@ -34,7 +34,7 @@ jobs:
 
       - name: Build WASM
         working-directory: crates/rk-frontend
-        run: trunk build --release --public-url "/${GITHUB_REPOSITORY#*/}/"
+        run: trunk build --release --public-url "/rk/app/"
 
       - name: Upload WASM artifact
         uses: actions/upload-artifact@v4
@@ -84,17 +84,17 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Download WASM artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: wasm-build
-          path: _site
-
       - name: Download docs artifact
         uses: actions/download-artifact@v4
         with:
           name: docs-build
-          path: _site/docs
+          path: _site
+
+      - name: Download WASM artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: wasm-build
+          path: _site/app
 
       - name: Upload combined artifact
         uses: actions/upload-pages-artifact@v3

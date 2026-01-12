@@ -6,3 +6,7 @@ node_modules/
 dist/
 dist-web/
 
+# Starlight docs build output
+docs/dist/
+docs/.astro/
+

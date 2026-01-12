@@ -4,8 +4,14 @@
   "private": true,
   "type": "module",
   "description": "",
+  "workspaces": [
+    "docs"
+  ],
   "scripts": {
-    "prepare": "husky"
+    "prepare": "husky",
+    "docs:dev": "npm run dev --workspace=docs",
+    "docs:build": "npm run build --workspace=docs",
+    "docs:preview": "npm run preview --workspace=docs"
   },
   "devDependencies": {
     "@commitlint/cli": "^19.6.1",

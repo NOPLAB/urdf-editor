@@ -1,0 +1,34 @@
+---
+title: RK URDF Editor
+description: A visual editor for URDF (Unified Robot Description Format) files
+template: splash
+hero:
+  tagline: Create and edit URDF robot descriptions with an intuitive visual interface
+  actions:
+    - text: Get Started
+      link: /rk/docs/getting-started/installation/
+      icon: right-arrow
+      variant: primary
+    - text: Try the App
+      link: /rk/
+      icon: external
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## Features
+
+<CardGrid stagger>
+  <Card title="Visual Editing" icon="pencil">
+    Edit URDF files with an intuitive 3D viewport and property panels.
+  </Card>
+  <Card title="Real-time Preview" icon="laptop">
+    See changes instantly as you modify your robot description.
+  </Card>
+  <Card title="Cross-Platform" icon="rocket">
+    Works as a native desktop app or directly in your browser via WebAssembly.
+  </Card>
+  <Card title="Import/Export" icon="document">
+    Load and save URDF files, with support for STL and OBJ meshes.
+  </Card>
+</CardGrid>

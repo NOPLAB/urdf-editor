@@ -1,9 +1,9 @@
 [build]
 target = "index.html"
-dist = "../../dist-web"
+dist = "../../dist_app"
 
 [watch]
-ignore = ["../../dist-web"]
+ignore = ["../../dist_app"]
 
 [serve]
 address = "127.0.0.1"

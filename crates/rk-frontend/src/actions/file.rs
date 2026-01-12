@@ -89,7 +89,7 @@ fn handle_import_urdf(path: std::path::PathBuf, ctx: &ActionContext) {
                 project.name,
                 project.assembly.links.len(),
                 project.assembly.joints.len(),
-                project.parts.len()
+                project.parts().len()
             );
 
             // Clear viewport
@@ -102,9 +102,9 @@ fn handle_import_urdf(path: std::path::PathBuf, ctx: &ActionContext) {
             if let Some(viewport_state) = ctx.viewport_state {
                 let mut total_center = glam::Vec3::ZERO;
                 let mut max_radius: f32 = 1.0;
-                let part_count = project.parts.len() as f32;
+                let part_count = project.parts().len() as f32;
 
-                for part in &project.parts {
+                for part in project.parts_iter() {
                     viewport_state.lock().add_part(part);
 
                     // Accumulate for camera fitting
@@ -147,8 +147,7 @@ fn handle_save_project(path: Option<std::path::PathBuf>, ctx: &ActionContext) {
     let save_path = path.or(state.project_path.clone());
 
     if let Some(ref path) = save_path {
-        // Sync parts to project
-        state.project.parts = state.parts.values().cloned().collect();
+        // No sync needed - parts are stored directly in project
 
         match state.project.save(path) {
             Ok(()) => {
@@ -179,7 +178,7 @@ fn handle_load_project(path: std::path::PathBuf, ctx: &ActionContext) {
 
             // Load parts into viewport
             if let Some(viewport_state) = ctx.viewport_state {
-                for part in &project.parts {
+                for part in project.parts_iter() {
                     viewport_state.lock().add_part(part);
                 }
             }
@@ -319,7 +318,7 @@ fn handle_export_urdf(path: std::path::PathBuf, robot_name: String, ctx: &Action
         use_package_uri: false,
     };
 
-    match rk_core::export_urdf(&state.project.assembly, &state.parts, &options) {
+    match rk_core::export_urdf(&state.project.assembly, state.project.parts(), &options) {
         Ok(_urdf) => {
             tracing::info!("Exported URDF to {:?}", options.output_dir);
         }

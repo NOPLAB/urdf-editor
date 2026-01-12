@@ -68,23 +68,19 @@ fn handle_load_project_bytes(_name: &str, data: &[u8], ctx: &ActionContext) {
 
             // Load parts into viewport
             if let Some(viewport_state) = ctx.viewport_state {
-                for part in &project.parts {
+                for part in project.parts_iter() {
                     viewport_state.lock().add_part(part);
                 }
             }
 
             // Load into app state (without file path for WASM)
+            // No manual sync needed - parts are stored directly in project
             let mut state = ctx.app_state.lock();
-            state.parts.clear();
-            for part in &project.parts {
-                state.parts.insert(part.id, part.clone());
-            }
             state.project = project;
             state.project_path = None;
             state.selected_part = None;
             state.selected_joint_point = None;
             state.modified = false;
-            state.joint_positions.clear();
         }
         Err(e) => {
             tracing::error!("Failed to load project from bytes: {}", e);

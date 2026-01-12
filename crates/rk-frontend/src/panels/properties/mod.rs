@@ -93,7 +93,7 @@ impl Panel for PropertiesPanel {
             .cloned()
             .collect();
 
-        let Some(part) = state.parts.get_mut(&selected_id) else {
+        let Some(part) = state.get_part_mut(selected_id) else {
             ui.weak("Selected part not found");
             return;
         };

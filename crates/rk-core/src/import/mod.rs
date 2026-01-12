@@ -107,7 +107,7 @@ pub fn import_urdf(urdf_path: &Path, options: &ImportOptions) -> Result<Project,
     let mut link_name_to_id: HashMap<String, Uuid> = HashMap::new();
 
     // Process links: create Parts and Links
-    let mut parts: Vec<Part> = Vec::new();
+    let mut parts: HashMap<Uuid, Part> = HashMap::new();
     let mut links: HashMap<Uuid, Link> = HashMap::new();
 
     for urdf_link in &robot.links {
@@ -141,7 +141,7 @@ pub fn import_urdf(urdf_path: &Path, options: &ImportOptions) -> Result<Project,
             part.inertia = inertial_props.inertia;
 
             let id = part.id;
-            parts.push(part);
+            parts.insert(id, part);
             Some(id)
         } else {
             None
@@ -339,7 +339,7 @@ pub fn import_urdf(urdf_path: &Path, options: &ImportOptions) -> Result<Project,
     // Final transform = link.world_transform * visual_origin
     for link in assembly.links.values() {
         if let Some(part_id) = link.part_id
-            && let Some(part) = parts.iter_mut().find(|p| p.id == part_id)
+            && let Some(part) = parts.get_mut(&part_id)
         {
             // part.origin_transform already contains visual origin
             // Prepend link's world transform
@@ -347,14 +347,8 @@ pub fn import_urdf(urdf_path: &Path, options: &ImportOptions) -> Result<Project,
         }
     }
 
-    // Create project
-    let project = Project {
-        version: 1,
-        name: robot.name,
-        parts,
-        assembly,
-        materials,
-    };
+    // Create project using constructor (parts is private)
+    let project = Project::with_parts(robot.name, parts, assembly, materials);
 
     Ok(project)
 }

@@ -68,7 +68,8 @@ pub fn build_tree_structure(
 
     // Root parts: parts with a link but no parent (top of their hierarchy)
     let root_parts: Vec<Uuid> = state
-        .parts
+        .project
+        .parts()
         .keys()
         .filter(|part_id| {
             if let Some(&link_id) = part_to_link.get(part_id) {
@@ -83,7 +84,8 @@ pub fn build_tree_structure(
 
     // Unconnected parts: parts not in assembly at all (no link)
     let unconnected_parts: Vec<Uuid> = state
-        .parts
+        .project
+        .parts()
         .keys()
         .filter(|part_id| !part_to_link.contains_key(part_id))
         .copied()

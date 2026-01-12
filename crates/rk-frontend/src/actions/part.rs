@@ -32,7 +32,7 @@ fn handle_create_primitive(
     ctx: &ActionContext,
 ) {
     // Generate unique name
-    let existing_count = ctx.app_state.lock().parts.len();
+    let existing_count = ctx.app_state.lock().project.parts().len();
     let part_name =
         name.unwrap_or_else(|| format!("{}_{}", primitive_type.name(), existing_count + 1));
 
@@ -76,7 +76,7 @@ fn handle_create_primitive(
 
 fn handle_create_empty(name: Option<String>, ctx: &ActionContext) {
     // Generate unique name
-    let existing_count = ctx.app_state.lock().parts.len();
+    let existing_count = ctx.app_state.lock().project.parts().len();
     let part_name = name.unwrap_or_else(|| format!("Empty_{}", existing_count + 1));
 
     // Create empty part (no geometry)

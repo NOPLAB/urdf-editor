@@ -32,7 +32,7 @@ impl Panel for JointListPanel {
     fn ui(&mut self, ui: &mut Ui, app_state: &SharedAppState) {
         let state = app_state.lock();
         let joints: Vec<_> = state.project.assembly.joints.values().cloned().collect();
-        let joint_positions = state.joint_positions.clone();
+        let joint_positions = state.project.assembly.joint_positions.clone();
         let angle_mode = state.angle_display_mode;
         drop(state);
 

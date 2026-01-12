@@ -47,6 +47,8 @@ fn main() -> eframe::Result<()> {
             .with_title("URDF Editor")
             .with_icon(icon),
         wgpu_options,
+        // Enable persistence for first launch detection
+        persist_window: false,
         ..Default::default()
     };
 

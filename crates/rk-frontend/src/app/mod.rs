@@ -3,6 +3,7 @@
 mod dock;
 mod menu;
 mod overlays;
+mod welcome;
 
 use std::sync::Arc;
 
@@ -12,10 +13,14 @@ use parking_lot::Mutex;
 use crate::actions::{ActionContext, dispatch_action};
 use crate::state::{SharedAppState, SharedViewportState, ViewportState, create_shared_state};
 use crate::update::{SharedUpdateStatus, UpdateStatus, check_for_updates, create_update_status};
+use welcome::WelcomeDialog;
 
 pub use dock::{PanelType, UrdfTabViewer, create_dock_layout};
 pub use menu::{MenuAction, render_menu_bar};
 pub use overlays::update_overlays;
+
+/// Storage key for tracking first launch
+const FIRST_LAUNCH_KEY: &str = "rk_first_launch_completed";
 
 /// Main application
 pub struct UrdfEditorApp {
@@ -25,6 +30,8 @@ pub struct UrdfEditorApp {
     update_status: SharedUpdateStatus,
     /// Whether the update notification has been dismissed
     update_dismissed: bool,
+    /// Welcome dialog state
+    welcome_dialog: WelcomeDialog,
 }
 
 impl UrdfEditorApp {
@@ -46,12 +53,19 @@ impl UrdfEditorApp {
         let update_status = create_update_status();
         check_for_updates(update_status.clone());
 
+        // Check if this is the first launch
+        let is_first_launch = cc
+            .storage
+            .and_then(|s| s.get_string(FIRST_LAUNCH_KEY))
+            .is_none();
+
         Self {
             dock_state,
             app_state: create_shared_state(),
             viewport_state,
             update_status,
             update_dismissed: false,
+            welcome_dialog: WelcomeDialog::new(is_first_launch),
         }
     }
 
@@ -140,5 +154,13 @@ impl eframe::App for UrdfEditorApp {
 
         // Update overlays when selection changes
         update_overlays(&self.app_state, &self.viewport_state);
+
+        // Welcome dialog (shown on first launch)
+        self.welcome_dialog.show(ctx);
+    }
+
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        // Mark that first launch has completed
+        storage.set_string(FIRST_LAUNCH_KEY, "true".to_string());
     }
 }

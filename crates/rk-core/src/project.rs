@@ -1,25 +1,88 @@
 //! Project file serialization
 
+use std::collections::HashMap;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::assembly::Assembly;
 use crate::part::Part;
 
-/// Project file containing all editor state
+/// Serialization format for backward compatibility
 #[derive(Debug, Clone, Serialize, Deserialize)]
+struct ProjectData {
+    version: u32,
+    name: String,
+    parts: Vec<Part>,
+    assembly: Assembly,
+    materials: Vec<MaterialDef>,
+}
+
+/// Project file containing all editor state
+#[derive(Debug, Clone)]
 pub struct Project {
     /// File format version
     pub version: u32,
     /// Project name
     pub name: String,
-    /// All parts in the project
-    pub parts: Vec<Part>,
+    /// All parts in the project (keyed by ID for O(1) lookup)
+    parts: HashMap<Uuid, Part>,
     /// Robot assembly
     pub assembly: Assembly,
     /// Material definitions
     pub materials: Vec<MaterialDef>,
+}
+
+impl From<Project> for ProjectData {
+    fn from(project: Project) -> Self {
+        Self {
+            version: project.version,
+            name: project.name,
+            parts: project.parts.into_values().collect(),
+            assembly: project.assembly,
+            materials: project.materials,
+        }
+    }
+}
+
+impl From<ProjectData> for Project {
+    fn from(data: ProjectData) -> Self {
+        let parts = data.parts.into_iter().map(|p| (p.id, p)).collect();
+        Self {
+            version: data.version,
+            name: data.name,
+            parts,
+            assembly: data.assembly,
+            materials: data.materials,
+        }
+    }
+}
+
+impl Serialize for Project {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let data = ProjectData {
+            version: self.version,
+            name: self.name.clone(),
+            parts: self.parts.values().cloned().collect(),
+            assembly: self.assembly.clone(),
+            materials: self.materials.clone(),
+        };
+        data.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Project {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let data = ProjectData::deserialize(deserializer)?;
+        Ok(Project::from(data))
+    }
 }
 
 impl Default for Project {
@@ -34,9 +97,25 @@ impl Project {
         Self {
             version: 1,
             name: name.into(),
-            parts: Vec::new(),
+            parts: HashMap::new(),
             assembly: Assembly::default(),
             materials: Vec::new(),
+        }
+    }
+
+    /// Create a project with all fields specified (used by import)
+    pub fn with_parts(
+        name: impl Into<String>,
+        parts: HashMap<Uuid, Part>,
+        assembly: Assembly,
+        materials: Vec<MaterialDef>,
+    ) -> Self {
+        Self {
+            version: 1,
+            name: name.into(),
+            parts,
+            assembly,
+            materials,
         }
     }
 
@@ -73,28 +152,43 @@ impl Project {
         Ok(project)
     }
 
-    /// Add a part to the project
-    pub fn add_part(&mut self, part: Part) {
-        self.parts.push(part);
+    // ============== Part Accessors ==============
+
+    /// Get a reference to the parts map
+    pub fn parts(&self) -> &HashMap<Uuid, Part> {
+        &self.parts
+    }
+
+    /// Get a mutable reference to the parts map
+    pub fn parts_mut(&mut self) -> &mut HashMap<Uuid, Part> {
+        &mut self.parts
+    }
+
+    /// Iterate over all parts
+    pub fn parts_iter(&self) -> impl Iterator<Item = &Part> {
+        self.parts.values()
+    }
+
+    /// Add a part to the project, returns the part ID
+    pub fn add_part(&mut self, part: Part) -> Uuid {
+        let id = part.id;
+        self.parts.insert(id, part);
+        id
     }
 
     /// Get a part by ID
-    pub fn get_part(&self, id: uuid::Uuid) -> Option<&Part> {
-        self.parts.iter().find(|p| p.id == id)
+    pub fn get_part(&self, id: Uuid) -> Option<&Part> {
+        self.parts.get(&id)
     }
 
     /// Get a mutable part by ID
-    pub fn get_part_mut(&mut self, id: uuid::Uuid) -> Option<&mut Part> {
-        self.parts.iter_mut().find(|p| p.id == id)
+    pub fn get_part_mut(&mut self, id: Uuid) -> Option<&mut Part> {
+        self.parts.get_mut(&id)
     }
 
     /// Remove a part by ID
-    pub fn remove_part(&mut self, id: uuid::Uuid) -> Option<Part> {
-        if let Some(pos) = self.parts.iter().position(|p| p.id == id) {
-            Some(self.parts.remove(pos))
-        } else {
-            None
-        }
+    pub fn remove_part(&mut self, id: Uuid) -> Option<Part> {
+        self.parts.remove(&id)
     }
 }
 

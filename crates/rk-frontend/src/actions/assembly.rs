@@ -45,18 +45,16 @@ fn handle_connect_parts(parent: Uuid, child: Uuid, ctx: &ActionContext) {
 
         // Get names first to avoid borrow issues
         let child_name_for_jp = state
-            .parts
-            .get(&child)
+            .get_part(child)
             .map(|p| p.name.clone())
             .unwrap_or_else(|| "child".to_string());
         let parent_name_for_jp = state
-            .parts
-            .get(&parent)
+            .get_part(parent)
             .map(|p| p.name.clone())
             .unwrap_or_else(|| "parent".to_string());
 
         // Create joint point on parent part (at center)
-        let parent_jp_id = if let Some(part) = state.parts.get(&parent) {
+        let parent_jp_id = if let Some(part) = state.get_part(parent) {
             let center = glam::Vec3::new(
                 (part.bbox_min[0] + part.bbox_max[0]) / 2.0,
                 (part.bbox_min[1] + part.bbox_max[1]) / 2.0,
@@ -71,7 +69,7 @@ fn handle_connect_parts(parent: Uuid, child: Uuid, ctx: &ActionContext) {
         };
 
         // Create joint point on child part (at center)
-        let child_jp_id = if let Some(part) = state.parts.get(&child) {
+        let child_jp_id = if let Some(part) = state.get_part(child) {
             let center = glam::Vec3::new(
                 (part.bbox_min[0] + part.bbox_max[0]) / 2.0,
                 (part.bbox_min[1] + part.bbox_max[1]) / 2.0,
@@ -126,11 +124,10 @@ fn handle_connect_parts(parent: Uuid, child: Uuid, ctx: &ActionContext) {
                 state.modified = true;
 
                 // Update world transforms after connection
-                let joint_positions = state.joint_positions.clone();
                 state
                     .project
                     .assembly
-                    .update_world_transforms_with_positions(&joint_positions);
+                    .update_world_transforms_with_current_positions();
 
                 // Update renderer transforms
                 sync_renderer_transforms(&state, ctx);
@@ -161,11 +158,10 @@ fn handle_disconnect_part(child: Uuid, ctx: &ActionContext) {
                 state.modified = true;
 
                 // Update world transforms after disconnection
-                let joint_positions = state.joint_positions.clone();
                 state
                     .project
                     .assembly
-                    .update_world_transforms_with_positions(&joint_positions);
+                    .update_world_transforms_with_current_positions();
 
                 // Update renderer transforms
                 sync_renderer_transforms(&state, ctx);
@@ -216,7 +212,7 @@ fn find_or_create_link(state: &mut AppState, part_id: Uuid) -> Option<Uuid> {
         return Some(*link_id);
     }
     // Create new link
-    if let Some(part) = state.parts.get(&part_id) {
+    if let Some(part) = state.get_part(part_id) {
         let link = Link::from_part(part);
         let link_id = state.project.assembly.add_link(link);
         Some(link_id)
@@ -239,14 +235,16 @@ fn handle_update_joint_position(joint_id: Uuid, position: f32, ctx: &ActionConte
         position
     };
 
-    state.set_joint_position(joint_id, clamped_position);
-
-    // Update world transforms with new joint positions
-    let joint_positions = state.joint_positions.clone();
     state
         .project
         .assembly
-        .update_world_transforms_with_positions(&joint_positions);
+        .set_joint_position(joint_id, clamped_position);
+
+    // Update world transforms with new joint positions
+    state
+        .project
+        .assembly
+        .update_world_transforms_with_current_positions();
 
     // Update renderer transforms
     sync_renderer_transforms(&state, ctx);
@@ -254,14 +252,13 @@ fn handle_update_joint_position(joint_id: Uuid, position: f32, ctx: &ActionConte
 
 fn handle_reset_joint_position(joint_id: Uuid, ctx: &ActionContext) {
     let mut state = ctx.app_state.lock();
-    state.reset_joint_position(joint_id);
+    state.project.assembly.reset_joint_position(joint_id);
 
     // Update world transforms with new joint positions
-    let joint_positions = state.joint_positions.clone();
     state
         .project
         .assembly
-        .update_world_transforms_with_positions(&joint_positions);
+        .update_world_transforms_with_current_positions();
 
     // Update renderer transforms
     sync_renderer_transforms(&state, ctx);
@@ -269,7 +266,7 @@ fn handle_reset_joint_position(joint_id: Uuid, ctx: &ActionContext) {
 
 fn handle_reset_all_joint_positions(ctx: &ActionContext) {
     let mut state = ctx.app_state.lock();
-    state.reset_all_joint_positions();
+    state.project.assembly.reset_all_joint_positions();
 
     // Update world transforms (all joints at 0)
     state.project.assembly.update_world_transforms();
@@ -289,7 +286,7 @@ fn sync_renderer_transforms(state: &AppState, ctx: &ActionContext) {
         // Then apply transforms while updating pivot positions and axes
         for (link_id, link) in &state.project.assembly.links {
             if let Some(part_id) = link.part_id
-                && let Some(part) = state.parts.get(&part_id)
+                && let Some(part) = state.get_part(part_id)
             {
                 // Collect ancestor joints from this link to root
                 // Store: (original_pivot, original_axis, joint_type, joint_value)
@@ -300,7 +297,7 @@ fn sync_renderer_transforms(state: &AppState, ctx: &ActionContext) {
                     state.project.assembly.parent.get(&current_link_id)
                 {
                     if let Some(joint) = state.project.assembly.joints.get(joint_id) {
-                        let joint_pos = state.joint_positions.get(joint_id).copied().unwrap_or(0.0);
+                        let joint_pos = state.project.assembly.get_joint_position(*joint_id);
 
                         // Get parent part's center as original joint pivot point
                         let original_pivot = get_part_center(state, *parent_link_id);
@@ -355,7 +352,7 @@ fn sync_renderer_transforms(state: &AppState, ctx: &ActionContext) {
 fn get_part_center(state: &AppState, link_id: Uuid) -> glam::Vec3 {
     if let Some(link) = state.project.assembly.links.get(&link_id)
         && let Some(part_id) = link.part_id
-        && let Some(part) = state.parts.get(&part_id)
+        && let Some(part) = state.get_part(part_id)
     {
         let center = glam::Vec3::new(
             (part.bbox_min[0] + part.bbox_max[0]) / 2.0,

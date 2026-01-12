@@ -51,6 +51,9 @@ pub struct Assembly {
     pub(crate) joint_name_index: HashMap<String, Uuid>,
     /// Cached tree structure for efficient traversal (interior mutability for lazy evaluation)
     cache: RefCell<TreeCache>,
+    /// Current joint positions (joint_id -> position in radians or meters)
+    /// Runtime state only - not serialized
+    pub joint_positions: HashMap<Uuid, f32>,
 }
 
 impl From<Assembly> for AssemblyData {
@@ -78,6 +81,7 @@ impl From<AssemblyData> for Assembly {
             link_name_index: HashMap::new(),
             joint_name_index: HashMap::new(),
             cache: RefCell::new(TreeCache::default()),
+            joint_positions: HashMap::new(),
         };
         assembly.rebuild_indices();
         assembly.update_world_transforms();
@@ -114,6 +118,7 @@ impl Assembly {
             link_name_index: HashMap::new(),
             joint_name_index: HashMap::new(),
             cache: RefCell::new(TreeCache::default()),
+            joint_positions: HashMap::new(),
         }
     }
 
@@ -501,6 +506,40 @@ impl Assembly {
     /// Count total number of joint points
     pub fn joint_point_count(&self) -> usize {
         self.joint_points.len()
+    }
+
+    // ============== Joint Position Management ==============
+
+    /// Set a joint position (in radians for revolute, meters for prismatic)
+    pub fn set_joint_position(&mut self, joint_id: Uuid, position: f32) {
+        self.joint_positions.insert(joint_id, position);
+    }
+
+    /// Get a joint position (defaults to 0.0)
+    pub fn get_joint_position(&self, joint_id: Uuid) -> f32 {
+        self.joint_positions.get(&joint_id).copied().unwrap_or(0.0)
+    }
+
+    /// Reset a joint position to 0
+    pub fn reset_joint_position(&mut self, joint_id: Uuid) {
+        self.joint_positions.remove(&joint_id);
+    }
+
+    /// Reset all joint positions to 0
+    pub fn reset_all_joint_positions(&mut self) {
+        self.joint_positions.clear();
+    }
+
+    /// Update all world transforms using internal joint positions
+    pub fn update_world_transforms_with_current_positions(&mut self) {
+        let roots = self.get_root_links();
+        for root_id in roots {
+            self.update_transform_recursive_with_positions(
+                root_id,
+                Mat4::IDENTITY,
+                &self.joint_positions.clone(),
+            );
+        }
     }
 }
 

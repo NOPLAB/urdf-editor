@@ -113,9 +113,8 @@ pub fn render_menu_bar(ctx: &egui::Context, app_state: &SharedAppState) -> Optio
                         wasm_bindgen_futures::spawn_local(async move {
                             // Serialize project to bytes
                             let data = {
-                                let mut state = app_state.lock();
-                                // Sync parts to project before saving
-                                state.project.parts = state.parts.values().cloned().collect();
+                                let state = app_state.lock();
+                                // No sync needed - parts are stored directly in project
                                 match state.project.to_bytes() {
                                     Ok(data) => data,
                                     Err(e) => {
@@ -176,7 +175,7 @@ pub fn render_menu_bar(ctx: &egui::Context, app_state: &SharedAppState) -> Optio
                                 let robot_name = state.project.name.clone();
                                 match rk_core::export_urdf_to_string(
                                     &state.project.assembly,
-                                    &state.parts,
+                                    state.project.parts(),
                                     &robot_name,
                                 ) {
                                     Ok(urdf) => (urdf, robot_name),

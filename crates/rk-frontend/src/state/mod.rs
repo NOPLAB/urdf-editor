@@ -6,7 +6,6 @@ mod viewport;
 pub use editor::{EditorTool, PrimitiveType};
 pub use viewport::{GizmoInteraction, GizmoTransform, SharedViewportState, ViewportState};
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -83,10 +82,8 @@ pub enum AngleDisplayMode {
 
 /// Application state
 pub struct AppState {
-    /// Current project
+    /// Current project (contains parts, assembly, materials)
     pub project: Project,
-    /// Parts indexed by ID for quick lookup
-    pub parts: HashMap<Uuid, Part>,
     /// Currently selected part
     pub selected_part: Option<Uuid>,
     /// Currently selected joint point (part_id, point_index)
@@ -109,8 +106,6 @@ pub struct AppState {
     pub show_joint_markers: bool,
     /// Global unit setting for STL import and other operations
     pub stl_import_unit: StlUnit,
-    /// Current joint positions (joint_id -> position in radians or meters)
-    pub joint_positions: HashMap<Uuid, f32>,
     /// Angle display mode for joint sliders
     pub angle_display_mode: AngleDisplayMode,
 }
@@ -119,7 +114,6 @@ impl Default for AppState {
     fn default() -> Self {
         Self {
             project: Project::default(),
-            parts: HashMap::new(),
             selected_part: None,
             selected_joint_point: None,
             hovered_part: None,
@@ -131,7 +125,6 @@ impl Default for AppState {
             show_part_axes: true,
             show_joint_markers: true,
             stl_import_unit: StlUnit::Millimeters,
-            joint_positions: HashMap::new(),
             angle_display_mode: AngleDisplayMode::default(),
         }
     }
@@ -177,30 +170,27 @@ impl AppState {
         Self::default()
     }
 
-    /// Add a part
+    /// Add a part (delegates to project)
     pub fn add_part(&mut self, part: Part) {
-        let id = part.id;
-        self.parts.insert(id, part.clone());
         self.project.add_part(part);
         self.modified = true;
     }
 
-    /// Get a part by ID
+    /// Get a part by ID (delegates to project)
     pub fn get_part(&self, id: Uuid) -> Option<&Part> {
-        self.parts.get(&id)
+        self.project.get_part(id)
     }
 
-    /// Get a mutable part by ID
+    /// Get a mutable part by ID (delegates to project)
     pub fn get_part_mut(&mut self, id: Uuid) -> Option<&mut Part> {
         self.modified = true;
-        self.parts.get_mut(&id)
+        self.project.get_part_mut(id)
     }
 
-    /// Remove a part
+    /// Remove a part (delegates to project)
     pub fn remove_part(&mut self, id: Uuid) -> Option<Part> {
         self.modified = true;
-        self.project.remove_part(id);
-        self.parts.remove(&id)
+        self.project.remove_part(id)
     }
 
     /// Select a part
@@ -228,46 +218,19 @@ impl AppState {
     /// Reset to a new project
     pub fn new_project(&mut self) {
         self.project = Project::default();
-        self.parts.clear();
         self.selected_part = None;
         self.selected_joint_point = None;
         self.project_path = None;
         self.modified = false;
-        self.joint_positions.clear();
     }
 
     /// Load a project
     pub fn load_project(&mut self, project: Project, path: PathBuf) {
-        self.parts.clear();
-        for part in &project.parts {
-            self.parts.insert(part.id, part.clone());
-        }
         self.project = project;
         self.project_path = Some(path);
         self.selected_part = None;
         self.selected_joint_point = None;
         self.modified = false;
-        self.joint_positions.clear();
-    }
-
-    /// Set a joint position (in radians for revolute, meters for prismatic)
-    pub fn set_joint_position(&mut self, joint_id: Uuid, position: f32) {
-        self.joint_positions.insert(joint_id, position);
-    }
-
-    /// Get a joint position (defaults to 0.0)
-    pub fn get_joint_position(&self, joint_id: Uuid) -> f32 {
-        self.joint_positions.get(&joint_id).copied().unwrap_or(0.0)
-    }
-
-    /// Reset a joint position to 0
-    pub fn reset_joint_position(&mut self, joint_id: Uuid) {
-        self.joint_positions.remove(&joint_id);
-    }
-
-    /// Reset all joint positions to 0
-    pub fn reset_all_joint_positions(&mut self) {
-        self.joint_positions.clear();
     }
 }
 

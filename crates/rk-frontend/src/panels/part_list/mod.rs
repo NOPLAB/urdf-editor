@@ -265,12 +265,13 @@ impl Panel for PartListPanel {
 
         // Collect part names for display
         let part_names: HashMap<Uuid, String> = state
-            .parts
+            .project
+            .parts()
             .iter()
             .map(|(id, p)| (*id, p.name.clone()))
             .collect();
 
-        let is_empty = state.parts.is_empty();
+        let is_empty = state.project.parts().is_empty();
         drop(state);
 
         // Reset drop targets each frame

@@ -460,6 +460,7 @@ impl Renderer {
                     load: wgpu::LoadOp::Clear(CLEAR_COLOR),
                     store: wgpu::StoreOp::Store,
                 },
+                depth_slice: None,
             }
         } else {
             // MSAA disabled: render directly to output
@@ -470,6 +471,7 @@ impl Renderer {
                     load: wgpu::LoadOp::Clear(CLEAR_COLOR),
                     store: wgpu::StoreOp::Store,
                 },
+                depth_slice: None,
             }
         };
 

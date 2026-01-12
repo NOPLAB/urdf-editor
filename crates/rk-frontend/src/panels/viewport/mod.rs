@@ -349,20 +349,20 @@ impl Panel for ViewportPanel {
         response.context_menu(|ui| {
             if ui.button("Reset View").clicked() {
                 vp_state.renderer.camera_mut().fit_all(Vec3::ZERO, 2.0);
-                ui.close_menu();
+                ui.close();
             }
             ui.separator();
             if ui.button("Top View").clicked() {
                 vp_state.renderer.camera_mut().set_top_view();
-                ui.close_menu();
+                ui.close();
             }
             if ui.button("Front View").clicked() {
                 vp_state.renderer.camera_mut().set_front_view();
-                ui.close_menu();
+                ui.close();
             }
             if ui.button("Side View").clicked() {
                 vp_state.renderer.camera_mut().set_side_view();
-                ui.close_menu();
+                ui.close();
             }
         });
 

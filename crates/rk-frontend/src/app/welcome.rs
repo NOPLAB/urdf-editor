@@ -25,7 +25,7 @@ impl WelcomeDialog {
         }
 
         // Semi-transparent background overlay
-        let screen_rect = ctx.screen_rect();
+        let screen_rect = ctx.content_rect();
         egui::Area::new(egui::Id::new("welcome_overlay"))
             .fixed_pos(screen_rect.min)
             .order(egui::Order::Background)

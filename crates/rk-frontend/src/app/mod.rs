@@ -39,8 +39,8 @@ impl UrdfEditorApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         // Create viewport state if WGPU is available
         let viewport_state = cc.wgpu_render_state.as_ref().map(|render_state| {
-            let device = render_state.device.clone();
-            let queue = render_state.queue.clone();
+            let device = Arc::new(render_state.device.clone());
+            let queue = Arc::new(render_state.queue.clone());
             let format = render_state.target_format;
 
             Arc::new(Mutex::new(ViewportState::new(device, queue, format)))

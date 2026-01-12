@@ -10,15 +10,15 @@ members = [
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-authors = ["URDF Editor Contributors"]
+authors = ["nop"]
 
 [workspace.dependencies]
 # Graphics (matching wiz versions)
-wgpu = "23.0"
-egui = "0.30"
-eframe = { version = "0.30", default-features = false, features = ["wgpu", "default_fonts"] }
-egui_dock = "0.15"
-egui-wgpu = "0.30"
+wgpu = "27.0"
+egui = "0.33"
+eframe = { version = "0.33", default-features = false, features = ["wgpu", "default_fonts"] }
+egui_dock = "0.18"
+egui-wgpu = "0.33"
 
 # WASM
 web-sys = "0.3"

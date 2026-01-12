@@ -31,7 +31,7 @@ pub fn show_tree_context_menu(ui: &mut egui::Ui, app_state: &SharedAppState) {
         {
             app_state.lock().queue_action(AppAction::ImportStl(path));
         }
-        ui.close_menu();
+        ui.close();
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -44,21 +44,21 @@ pub fn show_tree_context_menu(ui: &mut egui::Ui, app_state: &SharedAppState) {
                 primitive_type: PrimitiveType::Box,
                 name: None,
             });
-            ui.close_menu();
+            ui.close();
         }
         if ui.button("Cylinder").clicked() {
             app_state.lock().queue_action(AppAction::CreatePrimitive {
                 primitive_type: PrimitiveType::Cylinder,
                 name: None,
             });
-            ui.close_menu();
+            ui.close();
         }
         if ui.button("Sphere").clicked() {
             app_state.lock().queue_action(AppAction::CreatePrimitive {
                 primitive_type: PrimitiveType::Sphere,
                 name: None,
             });
-            ui.close_menu();
+            ui.close();
         }
     });
 
@@ -67,6 +67,6 @@ pub fn show_tree_context_menu(ui: &mut egui::Ui, app_state: &SharedAppState) {
         app_state
             .lock()
             .queue_action(AppAction::CreateEmpty { name: None });
-        ui.close_menu();
+        ui.close();
     }
 }

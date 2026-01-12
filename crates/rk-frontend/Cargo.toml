@@ -3,7 +3,7 @@ name = "rk-frontend"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "A visual editor for URDF (Unified Robot Description Format) files"
+description = "visual editor"
 build = "build.rs"
 
 [[bin]]

@@ -7,11 +7,11 @@ pub fn render_menu_bar(ctx: &egui::Context, app_state: &SharedAppState) -> Optio
     let mut menu_action = None;
 
     egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
-        egui::menu::bar(ui, |ui| {
+        egui::MenuBar::new().ui(ui, |ui| {
             ui.menu_button("File", |ui| {
                 if ui.button("New Project").clicked() {
                     app_state.lock().queue_action(AppAction::NewProject);
-                    ui.close_menu();
+                    ui.close();
                 }
                 #[cfg(not(target_arch = "wasm32"))]
                 {
@@ -22,11 +22,11 @@ pub fn render_menu_bar(ctx: &egui::Context, app_state: &SharedAppState) -> Optio
                         {
                             app_state.lock().queue_action(AppAction::LoadProject(path));
                         }
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.button("Save Project").clicked() {
                         app_state.lock().queue_action(AppAction::SaveProject(None));
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.button("Save Project As...").clicked() {
                         if let Some(path) = rfd::FileDialog::new()
@@ -37,7 +37,7 @@ pub fn render_menu_bar(ctx: &egui::Context, app_state: &SharedAppState) -> Optio
                                 .lock()
                                 .queue_action(AppAction::SaveProject(Some(path)));
                         }
-                        ui.close_menu();
+                        ui.close();
                     }
                     ui.separator();
                     if ui.button("Import STL...").clicked() {
@@ -47,7 +47,7 @@ pub fn render_menu_bar(ctx: &egui::Context, app_state: &SharedAppState) -> Optio
                         {
                             app_state.lock().queue_action(AppAction::ImportStl(path));
                         }
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.button("Import URDF...").clicked() {
                         if let Some(path) = rfd::FileDialog::new()
@@ -57,7 +57,7 @@ pub fn render_menu_bar(ctx: &egui::Context, app_state: &SharedAppState) -> Optio
                         {
                             app_state.lock().queue_action(AppAction::ImportUrdf(path));
                         }
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.button("Export URDF...").clicked() {
                         let default_name = app_state.lock().project.name.clone();
@@ -82,7 +82,7 @@ pub fn render_menu_bar(ctx: &egui::Context, app_state: &SharedAppState) -> Optio
                                 robot_name,
                             });
                         }
-                        ui.close_menu();
+                        ui.close();
                     }
                     ui.separator();
                     if ui.button("Exit").clicked() {
@@ -106,7 +106,7 @@ pub fn render_menu_bar(ctx: &egui::Context, app_state: &SharedAppState) -> Optio
                                     .queue_action(AppAction::LoadProjectBytes { name, data });
                             }
                         });
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.button("Save Project...").clicked() {
                         let app_state = app_state.clone();
@@ -139,7 +139,7 @@ pub fn render_menu_bar(ctx: &egui::Context, app_state: &SharedAppState) -> Optio
                                 }
                             }
                         });
-                        ui.close_menu();
+                        ui.close();
                     }
                     ui.separator();
                     if ui.button("Import STL...").clicked() {
@@ -164,7 +164,7 @@ pub fn render_menu_bar(ctx: &egui::Context, app_state: &SharedAppState) -> Optio
                                 });
                             }
                         });
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.button("Export URDF...").clicked() {
                         let app_state = app_state.clone();
@@ -200,7 +200,7 @@ pub fn render_menu_bar(ctx: &egui::Context, app_state: &SharedAppState) -> Optio
                                 }
                             }
                         });
-                        ui.close_menu();
+                        ui.close();
                     }
                 }
             });
@@ -208,14 +208,14 @@ pub fn render_menu_bar(ctx: &egui::Context, app_state: &SharedAppState) -> Optio
             ui.menu_button("Edit", |ui| {
                 if ui.button("Delete Selected").clicked() {
                     app_state.lock().queue_action(AppAction::DeleteSelectedPart);
-                    ui.close_menu();
+                    ui.close();
                 }
             });
 
             ui.menu_button("View", |ui| {
                 if ui.button("Reset Layout").clicked() {
                     menu_action = Some(MenuAction::ResetLayout);
-                    ui.close_menu();
+                    ui.close();
                 }
             });
         });

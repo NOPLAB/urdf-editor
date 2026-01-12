@@ -27,7 +27,7 @@ pub fn render_camera_settings(
         .show(ui.ctx(), |ui| {
             egui::Frame::popup(ui.style())
                 .fill(egui::Color32::from_rgba_unmultiplied(30, 30, 30, 220))
-                .rounding(4.0)
+                .corner_radius(4.0)
                 .stroke(egui::Stroke::new(1.0, egui::Color32::from_gray(60)))
                 .inner_margin(2.0)
                 .show(ui, |ui| {
@@ -56,7 +56,7 @@ pub fn render_camera_settings(
         .show(ui.ctx(), |ui| {
             egui::Frame::popup(ui.style())
                 .fill(egui::Color32::from_rgba_unmultiplied(30, 30, 30, 220))
-                .rounding(4.0)
+                .corner_radius(4.0)
                 .stroke(egui::Stroke::new(1.0, egui::Color32::from_gray(60)))
                 .inner_margin(8.0)
                 .show(ui, |ui| {
@@ -154,7 +154,7 @@ pub fn render_gizmo_toggle(
         .show(ui.ctx(), |ui| {
             egui::Frame::popup(ui.style())
                 .fill(egui::Color32::from_rgba_unmultiplied(30, 30, 30, 220))
-                .rounding(4.0)
+                .corner_radius(4.0)
                 .stroke(egui::Stroke::new(1.0, egui::Color32::from_gray(60)))
                 .inner_margin(2.0)
                 .show(ui, |ui| {

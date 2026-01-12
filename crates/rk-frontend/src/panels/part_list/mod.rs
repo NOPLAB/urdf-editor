@@ -75,11 +75,11 @@ impl PartListPanel {
         response.context_menu(|ui| {
             if has_parent && ui.button("Disconnect").clicked() {
                 actions.push(TreeAction::Disconnect(part_id));
-                ui.close_menu();
+                ui.close();
             }
             if ui.button("Delete").clicked() {
                 actions.push(TreeAction::Delete(part_id));
-                ui.close_menu();
+                ui.close();
             }
         });
 
@@ -223,7 +223,7 @@ impl PartListPanel {
                     if ui.button("Rename").clicked() {
                         self.project_name_buffer = project_name.to_string();
                         self.editing_project_name = true;
-                        ui.close_menu();
+                        ui.close();
                     }
                 });
 
@@ -331,6 +331,7 @@ impl Panel for PartListPanel {
                         rect,
                         2.0,
                         egui::Stroke::new(1.0, egui::Color32::GRAY),
+                        egui::StrokeKind::Outside,
                     );
                 }
             }

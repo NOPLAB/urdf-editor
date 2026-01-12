@@ -33,7 +33,7 @@ jobs:
         run: cargo install trunk --locked
 
       - name: Build WASM
-        working-directory: crates/urdf-frontend
+        working-directory: crates/rk-frontend
         run: trunk build --release --public-url "/${GITHUB_REPOSITORY#*/}/"
 
       - name: Upload artifact

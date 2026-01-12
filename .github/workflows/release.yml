@@ -22,7 +22,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Build release
-        run: cargo build --release --package urdf-frontend
+        run: cargo build --release --package rk-frontend
 
       - name: Install cargo-packager
         run: cargo install cargo-packager --locked
@@ -50,10 +50,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Build x86_64
-        run: cargo build --release --package urdf-frontend --target x86_64-apple-darwin
+        run: cargo build --release --package rk-frontend --target x86_64-apple-darwin
 
       - name: Build aarch64
-        run: cargo build --release --package urdf-frontend --target aarch64-apple-darwin
+        run: cargo build --release --package rk-frontend --target aarch64-apple-darwin
 
       - name: Create universal binary
         run: |
@@ -99,7 +99,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Build release
-        run: cargo build --release --package urdf-frontend
+        run: cargo build --release --package rk-frontend
 
       - name: Install cargo-packager
         run: cargo install cargo-packager --locked

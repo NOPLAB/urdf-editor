@@ -1,9 +1,9 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/urdf-core",
-    "crates/urdf-renderer",
-    "crates/urdf-frontend",
+    "crates/rk-core",
+    "crates/rk-renderer",
+    "crates/rk-frontend",
 ]
 
 [workspace.package]
@@ -53,6 +53,6 @@ semver = "1"
 open = "5"
 
 # Internal crates
-urdf-core = { path = "crates/urdf-core" }
-urdf-renderer = { path = "crates/urdf-renderer" }
-urdf-frontend = { path = "crates/urdf-frontend" }
+rk-core = { path = "crates/rk-core" }
+rk-renderer = { path = "crates/rk-renderer" }
+rk-frontend = { path = "crates/rk-frontend" }

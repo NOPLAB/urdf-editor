@@ -2647,6 +2647,63 @@ dependencies = [
 ]
 
 [[package]]
+name = "rk-core"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "dae-parser",
+ "glam",
+ "ron",
+ "serde",
+ "stl_io",
+ "tempfile",
+ "thiserror 2.0.17",
+ "tobj",
+ "urdf-rs",
+ "uuid",
+]
+
+[[package]]
+name = "rk-frontend"
+version = "0.1.0"
+dependencies = [
+ "eframe",
+ "egui",
+ "egui-wgpu",
+ "egui_dock",
+ "getrandom 0.3.4",
+ "glam",
+ "log",
+ "open",
+ "parking_lot",
+ "rfd",
+ "rk-core",
+ "rk-renderer",
+ "semver",
+ "serde_json",
+ "tracing",
+ "tracing-subscriber",
+ "ureq",
+ "uuid",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "wgpu",
+ "winres",
+]
+
+[[package]]
+name = "rk-renderer"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "glam",
+ "rk-core",
+ "tracing",
+ "uuid",
+ "wgpu",
+]
+
+[[package]]
 name = "ron"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3290,63 +3347,6 @@ name = "untrusted"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
-
-[[package]]
-name = "urdf-core"
-version = "0.1.0"
-dependencies = [
- "bytemuck",
- "dae-parser",
- "glam",
- "ron",
- "serde",
- "stl_io",
- "tempfile",
- "thiserror 2.0.17",
- "tobj",
- "urdf-rs",
- "uuid",
-]
-
-[[package]]
-name = "urdf-frontend"
-version = "0.1.0"
-dependencies = [
- "eframe",
- "egui",
- "egui-wgpu",
- "egui_dock",
- "getrandom 0.3.4",
- "glam",
- "log",
- "open",
- "parking_lot",
- "rfd",
- "semver",
- "serde_json",
- "tracing",
- "tracing-subscriber",
- "urdf-core",
- "urdf-renderer",
- "ureq",
- "uuid",
- "wasm-bindgen-futures",
- "web-sys",
- "wgpu",
- "winres",
-]
-
-[[package]]
-name = "urdf-renderer"
-version = "0.1.0"
-dependencies = [
- "bytemuck",
- "glam",
- "tracing",
- "urdf-core",
- "uuid",
- "wgpu",
-]
 
 [[package]]
 name = "urdf-rs"

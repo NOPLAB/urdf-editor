@@ -6,7 +6,7 @@ description = "A visual editor for URDF (Unified Robot Description Format) files
 authors = ["RK Contributors"]
 binaries-dir = "target/release"
 out-dir = "dist"
-before-packaging-command = "cargo build --release -p urdf-frontend"
+before-packaging-command = "cargo build --release -p rk-frontend"
 license-file = "TERMS_OF_SERVICE.txt"
 icons = [
     "assets/icons/32x32.png",

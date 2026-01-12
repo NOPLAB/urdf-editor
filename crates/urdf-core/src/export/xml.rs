@@ -1,105 +1,19 @@
-//! URDF export functionality
+//! XML generation utilities for URDF export
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+
+use uuid::Uuid;
 
 use crate::assembly::{Assembly, Joint, Link, Pose};
 use crate::part::{JointType, Part};
-use crate::stl::save_stl;
 
-/// Export options for URDF generation
-#[derive(Debug, Clone)]
-pub struct ExportOptions {
-    /// Output directory
-    pub output_dir: std::path::PathBuf,
-    /// Robot name (for URDF root element)
-    pub robot_name: String,
-    /// Mesh package prefix (e.g., "package://robot_description")
-    pub mesh_prefix: String,
-    /// Whether to use package:// URIs or relative paths
-    pub use_package_uri: bool,
-}
-
-impl Default for ExportOptions {
-    fn default() -> Self {
-        Self {
-            output_dir: std::path::PathBuf::from("."),
-            robot_name: "robot".to_string(),
-            mesh_prefix: "meshes".to_string(),
-            use_package_uri: false,
-        }
-    }
-}
-
-/// Export assembly to URDF (writes files to disk)
-pub fn export_urdf(
-    assembly: &Assembly,
-    parts: &HashMap<uuid::Uuid, Part>,
-    options: &ExportOptions,
-) -> Result<String, ExportError> {
-    // Validate assembly
-    assembly
-        .validate()
-        .map_err(|errors| ExportError::Validation(format!("{:?}", errors)))?;
-
-    // Create mesh directory
-    let mesh_dir = options.output_dir.join(&options.mesh_prefix);
-    std::fs::create_dir_all(&mesh_dir).map_err(|e| ExportError::Io(e.to_string()))?;
-
-    // Export meshes and collect paths
-    let mut mesh_paths = HashMap::new();
-    for (part_id, part) in parts {
-        let filename = sanitize_filename(&part.name) + ".stl";
-        let mesh_path = mesh_dir.join(&filename);
-        save_stl(part, &mesh_path).map_err(|e| ExportError::MeshExport(e.to_string()))?;
-
-        let uri = if options.use_package_uri {
-            format!("package://{}/{}", options.robot_name, options.mesh_prefix) + "/" + &filename
-        } else {
-            format!("{}/{}", options.mesh_prefix, filename)
-        };
-        mesh_paths.insert(*part_id, uri);
-    }
-
-    // Generate URDF string
-    let urdf = generate_urdf_string(assembly, parts, &mesh_paths, &options.robot_name)?;
-
-    // Write URDF file
-    let urdf_path = options
-        .output_dir
-        .join(format!("{}.urdf", options.robot_name));
-    std::fs::write(&urdf_path, &urdf).map_err(|e| ExportError::Io(e.to_string()))?;
-
-    Ok(urdf)
-}
-
-/// Export assembly to URDF string only (no file I/O, for WASM support)
-/// Note: Mesh URIs will be placeholder paths like "meshes/part_name.stl"
-pub fn export_urdf_to_string(
-    assembly: &Assembly,
-    parts: &HashMap<uuid::Uuid, Part>,
-    robot_name: &str,
-) -> Result<String, ExportError> {
-    // Validate assembly
-    assembly
-        .validate()
-        .map_err(|errors| ExportError::Validation(format!("{:?}", errors)))?;
-
-    // Generate placeholder mesh paths
-    let mut mesh_paths = HashMap::new();
-    for (part_id, part) in parts {
-        let filename = sanitize_filename(&part.name) + ".stl";
-        let uri = format!("meshes/{}", filename);
-        mesh_paths.insert(*part_id, uri);
-    }
-
-    generate_urdf_string(assembly, parts, &mesh_paths, robot_name)
-}
+use super::ExportError;
 
 /// Internal function to generate URDF XML string
-fn generate_urdf_string(
+pub fn generate_urdf_string(
     assembly: &Assembly,
-    parts: &HashMap<uuid::Uuid, Part>,
-    mesh_paths: &HashMap<uuid::Uuid, String>,
+    parts: &HashMap<Uuid, Part>,
+    mesh_paths: &HashMap<Uuid, String>,
     robot_name: &str,
 ) -> Result<String, ExportError> {
     let roots = assembly.get_root_links();
@@ -145,7 +59,7 @@ fn generate_urdf_string(
         parts,
         mesh_paths,
         root_id,
-        &mut std::collections::HashSet::new(),
+        &mut HashSet::new(),
     )?;
 
     urdf.push_str("</robot>\n");
@@ -153,13 +67,13 @@ fn generate_urdf_string(
     Ok(urdf)
 }
 
-fn write_link_recursive(
+pub fn write_link_recursive(
     urdf: &mut String,
     assembly: &Assembly,
-    parts: &HashMap<uuid::Uuid, Part>,
-    mesh_paths: &HashMap<uuid::Uuid, String>,
-    link_id: uuid::Uuid,
-    visited: &mut std::collections::HashSet<uuid::Uuid>,
+    parts: &HashMap<Uuid, Part>,
+    mesh_paths: &HashMap<Uuid, String>,
+    link_id: Uuid,
+    visited: &mut HashSet<Uuid>,
 ) -> Result<(), ExportError> {
     if !visited.insert(link_id) {
         return Ok(()); // Already visited
@@ -205,7 +119,7 @@ fn write_link_recursive(
     Ok(())
 }
 
-fn write_link(urdf: &mut String, link: &Link, part: Option<&Part>, mesh_uri: Option<&str>) {
+pub fn write_link(urdf: &mut String, link: &Link, part: Option<&Part>, mesh_uri: Option<&str>) {
     urdf.push_str(&format!("  <link name=\"{}\">\n", xml_escape(&link.name)));
 
     // Only write full link content if we have a part/mesh
@@ -246,7 +160,7 @@ fn write_link(urdf: &mut String, link: &Link, part: Option<&Part>, mesh_uri: Opt
     urdf.push_str("  </link>\n\n");
 }
 
-fn write_origin(urdf: &mut String, origin: &Pose, indent: usize) {
+pub fn write_origin(urdf: &mut String, origin: &Pose, indent: usize) {
     let indent_str = " ".repeat(indent);
     urdf.push_str(&format!(
         "{}<origin xyz=\"{} {} {}\" rpy=\"{} {} {}\"/>\n",
@@ -260,7 +174,7 @@ fn write_origin(urdf: &mut String, origin: &Pose, indent: usize) {
     ));
 }
 
-fn write_visual_element(
+pub fn write_visual_element(
     urdf: &mut String,
     name: Option<&str>,
     origin: &Pose,
@@ -303,7 +217,7 @@ fn write_visual_element(
     urdf.push_str("    </visual>\n");
 }
 
-fn write_collision_element(
+pub fn write_collision_element(
     urdf: &mut String,
     name: Option<&str>,
     origin: &Pose,
@@ -323,7 +237,7 @@ fn write_collision_element(
     urdf.push_str("    </collision>\n");
 }
 
-fn write_joint(
+pub fn write_joint(
     urdf: &mut String,
     joint: &Joint,
     parent_name: &str,
@@ -398,7 +312,7 @@ fn write_joint(
     urdf.push_str("  </joint>\n\n");
 }
 
-fn xml_escape(s: &str) -> String {
+pub fn xml_escape(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
@@ -406,7 +320,7 @@ fn xml_escape(s: &str) -> String {
         .replace('\'', "&apos;")
 }
 
-fn sanitize_filename(name: &str) -> String {
+pub fn sanitize_filename(name: &str) -> String {
     name.chars()
         .map(|c| {
             if c.is_alphanumeric() || c == '_' || c == '-' {
@@ -416,23 +330,4 @@ fn sanitize_filename(name: &str) -> String {
             }
         })
         .collect()
-}
-
-/// Export-related errors
-#[derive(Debug, Clone, thiserror::Error)]
-pub enum ExportError {
-    #[error("Validation failed: {0}")]
-    Validation(String),
-    #[error("No root link defined")]
-    NoRootLink,
-    #[error("IO error: {0}")]
-    Io(String),
-    #[error("Mesh export failed: {0}")]
-    MeshExport(String),
-    #[error("Link not found: {0}")]
-    LinkNotFound(uuid::Uuid),
-    #[error("Part not found: {0}")]
-    PartNotFound(uuid::Uuid),
-    #[error("Mesh path not found for part: {0}")]
-    MeshNotFound(uuid::Uuid),
 }

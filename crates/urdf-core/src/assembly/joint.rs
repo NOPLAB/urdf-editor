@@ -1,0 +1,299 @@
+//! Joint types and builder for robot assembly
+
+use glam::Vec3;
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+use crate::part::{JointLimits, JointType};
+
+use super::types::Pose;
+
+/// A joint connecting two links
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Joint {
+    pub id: Uuid,
+    pub name: String,
+    pub joint_type: JointType,
+    /// Parent link ID
+    pub parent_link: Uuid,
+    /// Child link ID
+    pub child_link: Uuid,
+    /// Transform from parent link to joint origin
+    pub origin: Pose,
+    /// Joint axis (for revolute/prismatic)
+    pub axis: Vec3,
+    /// Joint limits
+    pub limits: Option<JointLimits>,
+    /// Joint dynamics
+    pub dynamics: Option<JointDynamics>,
+    /// Joint mimic configuration (follows another joint)
+    pub mimic: Option<JointMimic>,
+    /// Which joint point on parent was used
+    pub parent_joint_point: Option<Uuid>,
+    /// Which joint point on child was used
+    pub child_joint_point: Option<Uuid>,
+}
+
+/// Joint mimic configuration
+/// Makes this joint follow another joint's position: value = multiplier * other_joint + offset
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JointMimic {
+    /// ID of the joint to mimic
+    pub joint_id: Uuid,
+    /// Multiplier applied to the mimicked joint's position (default: 1.0)
+    pub multiplier: f32,
+    /// Offset added after multiplication (default: 0.0)
+    pub offset: f32,
+}
+
+impl JointMimic {
+    /// Create a new mimic configuration
+    pub fn new(joint_id: Uuid) -> Self {
+        Self {
+            joint_id,
+            multiplier: 1.0,
+            offset: 0.0,
+        }
+    }
+
+    /// Create a new mimic configuration with multiplier and offset
+    pub fn with_params(joint_id: Uuid, multiplier: f32, offset: f32) -> Self {
+        Self {
+            joint_id,
+            multiplier,
+            offset,
+        }
+    }
+
+    /// Calculate the mimic value from the source joint's position
+    pub fn calculate(&self, source_position: f32) -> f32 {
+        self.multiplier * source_position + self.offset
+    }
+}
+
+impl Joint {
+    /// Create a new fixed joint
+    pub fn fixed(name: impl Into<String>, parent: Uuid, child: Uuid, origin: Pose) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            name: name.into(),
+            joint_type: JointType::Fixed,
+            parent_link: parent,
+            child_link: child,
+            origin,
+            axis: Vec3::Z,
+            limits: None,
+            dynamics: None,
+            mimic: None,
+            parent_joint_point: None,
+            child_joint_point: None,
+        }
+    }
+
+    /// Create a new revolute joint
+    pub fn revolute(
+        name: impl Into<String>,
+        parent: Uuid,
+        child: Uuid,
+        origin: Pose,
+        axis: Vec3,
+        limits: JointLimits,
+    ) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            name: name.into(),
+            joint_type: JointType::Revolute,
+            parent_link: parent,
+            child_link: child,
+            origin,
+            axis: axis.normalize(),
+            limits: Some(limits),
+            dynamics: None,
+            mimic: None,
+            parent_joint_point: None,
+            child_joint_point: None,
+        }
+    }
+
+    /// Create a builder for constructing joints with fluent API
+    pub fn builder(name: impl Into<String>, parent: Uuid, child: Uuid) -> JointBuilder {
+        JointBuilder::new(name, parent, child)
+    }
+}
+
+/// Builder for creating joints with fluent API
+#[derive(Debug, Clone)]
+pub struct JointBuilder {
+    name: String,
+    joint_type: JointType,
+    parent_link: Uuid,
+    child_link: Uuid,
+    origin: Pose,
+    axis: Vec3,
+    limits: Option<JointLimits>,
+    dynamics: Option<JointDynamics>,
+    mimic: Option<JointMimic>,
+    parent_joint_point: Option<Uuid>,
+    child_joint_point: Option<Uuid>,
+}
+
+impl JointBuilder {
+    /// Create a new joint builder
+    pub fn new(name: impl Into<String>, parent: Uuid, child: Uuid) -> Self {
+        Self {
+            name: name.into(),
+            joint_type: JointType::Fixed,
+            parent_link: parent,
+            child_link: child,
+            origin: Pose::default(),
+            axis: Vec3::Z,
+            limits: None,
+            dynamics: None,
+            mimic: None,
+            parent_joint_point: None,
+            child_joint_point: None,
+        }
+    }
+
+    /// Set the joint type
+    pub fn joint_type(mut self, joint_type: JointType) -> Self {
+        self.joint_type = joint_type;
+        self
+    }
+
+    /// Set as a fixed joint
+    pub fn fixed(mut self) -> Self {
+        self.joint_type = JointType::Fixed;
+        self
+    }
+
+    /// Set as a revolute joint with default limits
+    pub fn revolute(mut self) -> Self {
+        self.joint_type = JointType::Revolute;
+        if self.limits.is_none() {
+            self.limits = Some(JointLimits::default_revolute());
+        }
+        self
+    }
+
+    /// Set as a continuous joint
+    pub fn continuous(mut self) -> Self {
+        self.joint_type = JointType::Continuous;
+        self
+    }
+
+    /// Set as a prismatic joint with default limits
+    pub fn prismatic(mut self) -> Self {
+        self.joint_type = JointType::Prismatic;
+        if self.limits.is_none() {
+            self.limits = Some(JointLimits::default_prismatic());
+        }
+        self
+    }
+
+    /// Set the joint origin
+    pub fn origin(mut self, pose: Pose) -> Self {
+        self.origin = pose;
+        self
+    }
+
+    /// Set the joint origin position
+    pub fn xyz(mut self, x: f32, y: f32, z: f32) -> Self {
+        self.origin.xyz = [x, y, z];
+        self
+    }
+
+    /// Set the joint origin rotation (roll, pitch, yaw)
+    pub fn rpy(mut self, roll: f32, pitch: f32, yaw: f32) -> Self {
+        self.origin.rpy = [roll, pitch, yaw];
+        self
+    }
+
+    /// Set the joint axis
+    pub fn axis(mut self, axis: Vec3) -> Self {
+        self.axis = axis.normalize();
+        self
+    }
+
+    /// Set the joint axis from x, y, z components
+    pub fn axis_xyz(mut self, x: f32, y: f32, z: f32) -> Self {
+        self.axis = Vec3::new(x, y, z).normalize();
+        self
+    }
+
+    /// Set the joint limits
+    pub fn limits(mut self, limits: JointLimits) -> Self {
+        self.limits = Some(limits);
+        self
+    }
+
+    /// Set joint limits with a range
+    pub fn limits_range(mut self, lower: f32, upper: f32) -> Self {
+        self.limits = Some(JointLimits::with_range(lower, upper));
+        self
+    }
+
+    /// Set the joint dynamics
+    pub fn dynamics(mut self, damping: f32, friction: f32) -> Self {
+        self.dynamics = Some(JointDynamics { damping, friction });
+        self
+    }
+
+    /// Set mimic configuration to follow another joint
+    pub fn mimic(mut self, joint_id: Uuid) -> Self {
+        self.mimic = Some(JointMimic::new(joint_id));
+        self
+    }
+
+    /// Set mimic configuration with multiplier and offset
+    pub fn mimic_with_params(mut self, joint_id: Uuid, multiplier: f32, offset: f32) -> Self {
+        self.mimic = Some(JointMimic::with_params(joint_id, multiplier, offset));
+        self
+    }
+
+    /// Set the parent joint point reference
+    pub fn parent_joint_point(mut self, point_id: Uuid) -> Self {
+        self.parent_joint_point = Some(point_id);
+        self
+    }
+
+    /// Set the child joint point reference
+    pub fn child_joint_point(mut self, point_id: Uuid) -> Self {
+        self.child_joint_point = Some(point_id);
+        self
+    }
+
+    /// Build the joint
+    pub fn build(self) -> Joint {
+        Joint {
+            id: Uuid::new_v4(),
+            name: self.name,
+            joint_type: self.joint_type,
+            parent_link: self.parent_link,
+            child_link: self.child_link,
+            origin: self.origin,
+            axis: self.axis,
+            limits: self.limits,
+            dynamics: self.dynamics,
+            mimic: self.mimic,
+            parent_joint_point: self.parent_joint_point,
+            child_joint_point: self.child_joint_point,
+        }
+    }
+}
+
+/// Joint dynamics
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct JointDynamics {
+    pub damping: f32,
+    pub friction: f32,
+}
+
+impl Default for JointDynamics {
+    fn default() -> Self {
+        Self {
+            damping: 0.0,
+            friction: 0.0,
+        }
+    }
+}

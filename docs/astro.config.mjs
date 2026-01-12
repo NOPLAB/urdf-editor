@@ -7,10 +7,16 @@ export default defineConfig({
   integrations: [
     starlight({
       title: 'RK',
-      description: 'Documentation for the RK URDF Editor',
+      description: 'Documentation for RK',
+      logo: {
+        src: './src/assets/logo.svg',
+        replacesTitle: true,
+      },
+      favicon: '/favicon.svg',
       social: {
         github: 'https://github.com/NOPLAB/rk',
       },
+      customCss: ['./src/styles/custom.css'],
       sidebar: [
         {
           label: 'Getting Started',

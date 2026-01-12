@@ -13,7 +13,7 @@ license = "MIT"
 authors = ["nop"]
 
 [workspace.dependencies]
-# Graphics (matching wiz versions)
+# Graphics
 wgpu = "27.0"
 egui = "0.33"
 eframe = { version = "0.33", default-features = false, features = ["wgpu", "default_fonts"] }
@@ -30,7 +30,7 @@ log = "0.4"
 glam = "0.29"
 bytemuck = { version = "1", features = ["derive"] }
 
-# STL/URDF/Mesh formats
+# Mesh formats
 stl_io = "0.7"
 urdf-rs = "0.9"
 tobj = "4"

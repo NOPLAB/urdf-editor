@@ -1,5 +1,6 @@
 //! Assembly (scene graph) for robot structure
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 
 use glam::{Mat4, Quat, Vec3};
@@ -9,6 +10,102 @@ use uuid::Uuid;
 use crate::geometry::GeometryType;
 use crate::inertia::InertiaMatrix;
 use crate::part::{JointLimits, JointPoint, JointType, Part};
+
+/// Cached tree structure for efficient traversal (computed on demand)
+#[derive(Debug, Clone, Default)]
+struct TreeCache {
+    /// Depth of each link (root = 0)
+    depths: HashMap<Uuid, usize>,
+    /// Pre-computed chain to root for each link
+    ancestors: HashMap<Uuid, Vec<Uuid>>,
+    /// Pre-computed descendants for each link
+    descendants: HashMap<Uuid, Vec<Uuid>>,
+    /// Root link IDs
+    roots: Vec<Uuid>,
+    /// Whether cache is valid
+    valid: bool,
+}
+
+impl TreeCache {
+    fn invalidate(&mut self) {
+        self.valid = false;
+    }
+
+    fn rebuild(
+        &mut self,
+        links: &HashMap<Uuid, Link>,
+        parent: &HashMap<Uuid, (Uuid, Uuid)>,
+        children: &HashMap<Uuid, Vec<(Uuid, Uuid)>>,
+    ) {
+        self.depths.clear();
+        self.ancestors.clear();
+        self.descendants.clear();
+        self.roots.clear();
+
+        // Find all root links
+        self.roots = links
+            .keys()
+            .filter(|id| !parent.contains_key(id))
+            .copied()
+            .collect();
+
+        // Build depths and ancestors using DFS from each root
+        for &root_id in &self.roots.clone() {
+            self.depths.insert(root_id, 0);
+            self.ancestors.insert(root_id, vec![root_id]);
+            Self::build_recursive(
+                &mut self.depths,
+                &mut self.ancestors,
+                children,
+                root_id,
+                0,
+                vec![root_id],
+            );
+        }
+
+        // Build descendants (reverse of ancestors)
+        for (link_id, ancestor_chain) in &self.ancestors.clone() {
+            for &ancestor_id in ancestor_chain {
+                if ancestor_id != *link_id {
+                    self.descendants
+                        .entry(ancestor_id)
+                        .or_default()
+                        .push(*link_id);
+                }
+            }
+        }
+
+        self.valid = true;
+    }
+
+    fn build_recursive(
+        depths: &mut HashMap<Uuid, usize>,
+        ancestors: &mut HashMap<Uuid, Vec<Uuid>>,
+        children: &HashMap<Uuid, Vec<(Uuid, Uuid)>>,
+        link_id: Uuid,
+        depth: usize,
+        ancestor_chain: Vec<Uuid>,
+    ) {
+        if let Some(child_list) = children.get(&link_id) {
+            for (_, child_id) in child_list {
+                let child_depth = depth + 1;
+                let mut child_ancestors = ancestor_chain.clone();
+                child_ancestors.push(*child_id);
+
+                depths.insert(*child_id, child_depth);
+                ancestors.insert(*child_id, child_ancestors.clone());
+                Self::build_recursive(
+                    depths,
+                    ancestors,
+                    children,
+                    *child_id,
+                    child_depth,
+                    child_ancestors,
+                );
+            }
+        }
+    }
+}
 
 /// A link in the robot assembly
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -476,8 +573,20 @@ impl Default for JointDynamics {
     }
 }
 
-/// Robot assembly (scene graph)
+/// Raw assembly data for deserialization (used internally)
 #[derive(Debug, Clone, Serialize, Deserialize)]
+struct AssemblyData {
+    name: String,
+    links: HashMap<Uuid, Link>,
+    joints: HashMap<Uuid, Joint>,
+    joint_points: HashMap<Uuid, JointPoint>,
+    children: HashMap<Uuid, Vec<(Uuid, Uuid)>>,
+    parent: HashMap<Uuid, (Uuid, Uuid)>,
+}
+
+/// Robot assembly (scene graph)
+#[derive(Debug, Clone, Serialize)]
+#[serde(into = "AssemblyData")]
 pub struct Assembly {
     pub name: String,
     /// All links
@@ -491,11 +600,53 @@ pub struct Assembly {
     /// Parent mapping: child_link -> (joint_id, parent_link)
     pub parent: HashMap<Uuid, (Uuid, Uuid)>,
     /// Name to ID index for links (O(1) lookup)
-    #[serde(skip)]
     link_name_index: HashMap<String, Uuid>,
     /// Name to ID index for joints (O(1) lookup)
-    #[serde(skip)]
     joint_name_index: HashMap<String, Uuid>,
+    /// Cached tree structure for efficient traversal (interior mutability for lazy evaluation)
+    cache: RefCell<TreeCache>,
+}
+
+impl From<Assembly> for AssemblyData {
+    fn from(assembly: Assembly) -> Self {
+        Self {
+            name: assembly.name,
+            links: assembly.links,
+            joints: assembly.joints,
+            joint_points: assembly.joint_points,
+            children: assembly.children,
+            parent: assembly.parent,
+        }
+    }
+}
+
+impl From<AssemblyData> for Assembly {
+    fn from(data: AssemblyData) -> Self {
+        let mut assembly = Self {
+            name: data.name,
+            links: data.links,
+            joints: data.joints,
+            joint_points: data.joint_points,
+            children: data.children,
+            parent: data.parent,
+            link_name_index: HashMap::new(),
+            joint_name_index: HashMap::new(),
+            cache: RefCell::new(TreeCache::default()),
+        };
+        assembly.rebuild_indices();
+        assembly.update_world_transforms();
+        assembly
+    }
+}
+
+impl<'de> Deserialize<'de> for Assembly {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let data = AssemblyData::deserialize(deserializer)?;
+        Ok(Assembly::from(data))
+    }
 }
 
 impl Default for Assembly {
@@ -516,16 +667,14 @@ impl Assembly {
             parent: HashMap::new(),
             link_name_index: HashMap::new(),
             joint_name_index: HashMap::new(),
+            cache: RefCell::new(TreeCache::default()),
         }
     }
 
     /// Get all root links (links without parents)
     pub fn get_root_links(&self) -> Vec<Uuid> {
-        self.links
-            .keys()
-            .filter(|id| !self.parent.contains_key(id))
-            .copied()
-            .collect()
+        self.ensure_cache_valid();
+        self.cache.borrow().roots.clone()
     }
 
     /// Rebuild name indices (call after deserialization)
@@ -538,6 +687,20 @@ impl Assembly {
         for (id, joint) in &self.joints {
             self.joint_name_index.insert(joint.name.clone(), *id);
         }
+        self.invalidate_cache();
+    }
+
+    /// Invalidate the tree cache (call after any structural change)
+    fn invalidate_cache(&self) {
+        self.cache.borrow_mut().invalidate();
+    }
+
+    /// Ensure the cache is valid, rebuilding if necessary
+    fn ensure_cache_valid(&self) {
+        let mut cache = self.cache.borrow_mut();
+        if !cache.valid {
+            cache.rebuild(&self.links, &self.parent, &self.children);
+        }
     }
 
     /// Add a link to the assembly (does not automatically set as root)
@@ -545,6 +708,7 @@ impl Assembly {
         let id = link.id;
         self.link_name_index.insert(link.name.clone(), id);
         self.links.insert(id, link);
+        self.invalidate_cache();
         id
     }
 
@@ -595,6 +759,7 @@ impl Assembly {
             children.retain(|(_, child_id)| !to_remove.contains(child_id));
         }
 
+        self.invalidate_cache();
         Ok(())
     }
 
@@ -636,6 +801,7 @@ impl Assembly {
             .push((joint_id, child_id));
         self.parent.insert(child_id, (joint_id, parent_id));
 
+        self.invalidate_cache();
         Ok(joint_id)
     }
 
@@ -658,6 +824,7 @@ impl Assembly {
             .ok_or(AssemblyError::JointNotFound(joint_id))?;
         self.joint_name_index.remove(&joint.name);
 
+        self.invalidate_cache();
         Ok(joint)
     }
 
@@ -892,15 +1059,15 @@ impl Assembly {
 
     /// Get the chain of link IDs from a link to the root
     pub fn get_chain_to_root(&self, link_id: Uuid) -> Vec<Uuid> {
-        let mut chain = vec![link_id];
-        let mut current = link_id;
-
-        while let Some((_, parent_id)) = self.parent.get(&current) {
-            chain.push(*parent_id);
-            current = *parent_id;
+        self.ensure_cache_valid();
+        let cache = self.cache.borrow();
+        if let Some(ancestors) = cache.ancestors.get(&link_id) {
+            // Cache stores root-first order, we need link-first order
+            ancestors.iter().rev().copied().collect()
+        } else {
+            // Link not in cache (shouldn't happen for valid links)
+            vec![link_id]
         }
-
-        chain
     }
 
     /// Get the joint connecting a link to its parent
@@ -927,32 +1094,45 @@ impl Assembly {
         self.children.get(&link_id).cloned().unwrap_or_default()
     }
 
-    /// Get all descendant link IDs (breadth-first)
+    /// Get all descendant link IDs
     pub fn get_all_descendants(&self, link_id: Uuid) -> Vec<Uuid> {
-        let mut descendants = Vec::new();
-        let mut queue = vec![link_id];
-
-        while let Some(current) = queue.pop() {
-            if let Some(children) = self.children.get(&current) {
-                for (_, child_id) in children {
-                    descendants.push(*child_id);
-                    queue.push(*child_id);
-                }
-            }
-        }
-
-        descendants
+        self.ensure_cache_valid();
+        self.cache
+            .borrow()
+            .descendants
+            .get(&link_id)
+            .cloned()
+            .unwrap_or_default()
     }
 
     /// Check if a link is an ancestor of another
     pub fn is_ancestor(&self, ancestor_id: Uuid, descendant_id: Uuid) -> bool {
-        let chain = self.get_chain_to_root(descendant_id);
-        chain.contains(&ancestor_id)
+        self.ensure_cache_valid();
+        let cache = self.cache.borrow();
+        // Quick depth check: ancestor must have smaller depth
+        if let (Some(&ancestor_depth), Some(&descendant_depth)) = (
+            cache.depths.get(&ancestor_id),
+            cache.depths.get(&descendant_id),
+        ) && ancestor_depth >= descendant_depth
+        {
+            return ancestor_id == descendant_id;
+        }
+        // Check if ancestor is in the descendant's ancestor chain
+        cache
+            .ancestors
+            .get(&descendant_id)
+            .is_some_and(|chain| chain.contains(&ancestor_id))
     }
 
     /// Get link depth from root (root = 0)
     pub fn get_link_depth(&self, link_id: Uuid) -> usize {
-        self.get_chain_to_root(link_id).len() - 1
+        self.ensure_cache_valid();
+        self.cache
+            .borrow()
+            .depths
+            .get(&link_id)
+            .copied()
+            .unwrap_or(0)
     }
 
     /// Get all joints in the chain from a link to root
@@ -1003,6 +1183,82 @@ impl Assembly {
     /// Check if assembly is empty
     pub fn is_empty(&self) -> bool {
         self.links.is_empty()
+    }
+
+    // ============== Extended Query API ==============
+
+    /// Get multiple links by IDs (batch operation)
+    pub fn get_links_batch(&self, ids: &[Uuid]) -> Vec<Option<&Link>> {
+        ids.iter().map(|id| self.links.get(id)).collect()
+    }
+
+    /// Get multiple joints by IDs (batch operation)
+    pub fn get_joints_batch(&self, ids: &[Uuid]) -> Vec<Option<&Joint>> {
+        ids.iter().map(|id| self.joints.get(id)).collect()
+    }
+
+    /// Get all leaf links (links with no children)
+    pub fn get_leaf_links(&self) -> Vec<Uuid> {
+        self.links
+            .keys()
+            .filter(|id| self.children.get(id).map(|c| c.is_empty()).unwrap_or(true))
+            .copied()
+            .collect()
+    }
+
+    /// Get subtree size (count of link + all descendants)
+    pub fn get_subtree_size(&self, link_id: Uuid) -> usize {
+        1 + self.get_all_descendants(link_id).len()
+    }
+
+    /// Find the common ancestor of two links (None if no common ancestor)
+    pub fn find_common_ancestor(&self, a: Uuid, b: Uuid) -> Option<Uuid> {
+        self.ensure_cache_valid();
+        let cache = self.cache.borrow();
+
+        let ancestors_a = cache.ancestors.get(&a)?;
+        let ancestors_b = cache.ancestors.get(&b)?;
+
+        // Find the deepest common ancestor (iterate from root to leaf order)
+        let mut common = None;
+        for (ancestor_a, ancestor_b) in ancestors_a.iter().zip(ancestors_b.iter()) {
+            if ancestor_a == ancestor_b {
+                common = Some(*ancestor_a);
+            } else {
+                break;
+            }
+        }
+        common
+    }
+
+    /// Find links matching a predicate
+    pub fn find_links<F>(&self, predicate: F) -> Vec<&Link>
+    where
+        F: Fn(&Link) -> bool,
+    {
+        self.links.values().filter(|link| predicate(link)).collect()
+    }
+
+    /// Find joints matching a predicate
+    pub fn find_joints<F>(&self, predicate: F) -> Vec<&Joint>
+    where
+        F: Fn(&Joint) -> bool,
+    {
+        self.joints
+            .values()
+            .filter(|joint| predicate(joint))
+            .collect()
+    }
+
+    /// Get all links at a specific depth level
+    pub fn get_links_at_depth(&self, depth: usize) -> Vec<Uuid> {
+        self.ensure_cache_valid();
+        self.cache
+            .borrow()
+            .depths
+            .iter()
+            .filter_map(|(id, &d)| if d == depth { Some(*id) } else { None })
+            .collect()
     }
 
     // ============== Joint Point Management ==============

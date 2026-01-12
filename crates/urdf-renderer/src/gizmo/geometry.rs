@@ -7,7 +7,9 @@ use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Vec3};
 use std::f32::consts::{FRAC_PI_2, TAU};
 
-use crate::constants::gizmo::{self, colors};
+use crate::constants::gizmo::{
+    self, SCALE_AXIS_LENGTH, SCALE_CUBE_SIZE, SCALE_LINE_RADIUS, colors,
+};
 
 /// Gizmo vertex data
 #[repr(C)]
@@ -203,6 +205,120 @@ pub fn generate_rotation_gizmo() -> (Vec<GizmoVertex>, Vec<u32>) {
 
                 indices.extend_from_slice(&[i0, i2, i1, i1, i2, i3]);
             }
+        }
+    }
+
+    (vertices, indices)
+}
+
+/// Generate scale gizmo geometry (3 axes with cubes at the end).
+///
+/// Each axis has a thin line from origin to a cube handle.
+/// Returns (vertices, indices) for indexed triangle rendering.
+pub fn generate_scale_gizmo() -> (Vec<GizmoVertex>, Vec<u32>) {
+    let mut vertices = Vec::new();
+    let mut indices = Vec::new();
+
+    let axis_length = SCALE_AXIS_LENGTH;
+    let line_radius = SCALE_LINE_RADIUS;
+    let cube_size = SCALE_CUBE_SIZE;
+    let segments = gizmo::SEGMENTS;
+
+    // Generate for each axis
+    for (axis_id, (color, direction)) in [
+        (colors::X_AXIS, Vec3::X),
+        (colors::Y_AXIS, Vec3::Y),
+        (colors::Z_AXIS, Vec3::Z),
+    ]
+    .iter()
+    .enumerate()
+    {
+        let base_index = vertices.len() as u32;
+
+        // Create rotation to align with axis direction
+        let rotation = if *direction == Vec3::X {
+            Mat4::from_rotation_z(-FRAC_PI_2)
+        } else if *direction == Vec3::Z {
+            Mat4::from_rotation_x(FRAC_PI_2)
+        } else {
+            Mat4::IDENTITY
+        };
+
+        // Line (cylinder) from origin to cube
+        for i in 0..=segments {
+            let angle = (i as f32 / segments as f32) * TAU;
+            let x = angle.cos() * line_radius;
+            let z = angle.sin() * line_radius;
+
+            // Bottom of line
+            let pos_bottom = rotation.transform_point3(Vec3::new(x, 0.0, z));
+            vertices.push(GizmoVertex {
+                position: pos_bottom.into(),
+                color: *color,
+                axis_id: axis_id as u32,
+            });
+
+            // Top of line (just before cube)
+            let pos_top = rotation.transform_point3(Vec3::new(x, axis_length - cube_size, z));
+            vertices.push(GizmoVertex {
+                position: pos_top.into(),
+                color: *color,
+                axis_id: axis_id as u32,
+            });
+        }
+
+        // Line indices
+        for i in 0..segments {
+            let i0 = base_index + i * 2;
+            let i1 = base_index + i * 2 + 1;
+            let i2 = base_index + (i + 1) * 2;
+            let i3 = base_index + (i + 1) * 2 + 1;
+            indices.extend_from_slice(&[i0, i2, i1, i1, i2, i3]);
+        }
+
+        // Cube at the end
+        let cube_center = rotation.transform_point3(Vec3::new(0.0, axis_length, 0.0));
+        let cube_base_index = vertices.len() as u32;
+
+        // Cube vertices (8 corners)
+        let cube_offsets = [
+            Vec3::new(-cube_size, -cube_size, -cube_size),
+            Vec3::new(cube_size, -cube_size, -cube_size),
+            Vec3::new(cube_size, cube_size, -cube_size),
+            Vec3::new(-cube_size, cube_size, -cube_size),
+            Vec3::new(-cube_size, -cube_size, cube_size),
+            Vec3::new(cube_size, -cube_size, cube_size),
+            Vec3::new(cube_size, cube_size, cube_size),
+            Vec3::new(-cube_size, cube_size, cube_size),
+        ];
+
+        for offset in &cube_offsets {
+            vertices.push(GizmoVertex {
+                position: (cube_center + *offset).into(),
+                color: *color,
+                axis_id: axis_id as u32,
+            });
+        }
+
+        // Cube faces (6 faces, 2 triangles each)
+        #[rustfmt::skip]
+        let cube_indices: [u32; 36] = [
+            // Front face
+            0, 1, 2, 0, 2, 3,
+            // Back face
+            4, 6, 5, 4, 7, 6,
+            // Top face
+            3, 2, 6, 3, 6, 7,
+            // Bottom face
+            0, 5, 1, 0, 4, 5,
+            // Right face
+            1, 5, 6, 1, 6, 2,
+            // Left face
+            0, 3, 7, 0, 7, 4,
+        ];
+
+        for idx in &cube_indices {
+            indices.push(cube_base_index + *idx);
         }
     }
 

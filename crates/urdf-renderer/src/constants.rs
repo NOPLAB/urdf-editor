@@ -43,6 +43,15 @@ pub mod gizmo {
     /// Hit test ring thickness multiplier
     pub const RING_HIT_THICKNESS: f32 = 0.1;
 
+    /// Scale gizmo cube size (half-extent)
+    pub const SCALE_CUBE_SIZE: f32 = 0.06;
+    /// Scale gizmo axis length (distance to cube center)
+    pub const SCALE_AXIS_LENGTH: f32 = 0.9;
+    /// Scale gizmo line radius
+    pub const SCALE_LINE_RADIUS: f32 = 0.015;
+    /// Scale gizmo hit test cube size
+    pub const SCALE_HIT_SIZE: f32 = 0.12;
+
     /// Axis colors for gizmo
     pub mod colors {
         /// X-axis color (red)

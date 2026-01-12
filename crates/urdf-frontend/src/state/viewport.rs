@@ -23,6 +23,7 @@ struct RenderTexture {
 pub enum GizmoTransform {
     Translation(Vec3),
     Rotation(Quat),
+    Scale(Vec3),
 }
 
 /// Gizmo interaction state
@@ -192,33 +193,42 @@ impl ViewportState {
         joint_points: &[urdf_core::JointPoint],
         selected_point: Option<usize>,
     ) {
-        let instances: Vec<MarkerInstance> = joint_points
-            .iter()
-            .enumerate()
-            .map(|(i, jp)| {
-                let world_pos = part.origin_transform.transform_point3(jp.position);
-                let color = if Some(i) == selected_point {
-                    [1.0, 0.8, 0.2, 1.0] // Gold for selected
-                } else {
-                    match jp.joint_type {
-                        urdf_core::JointType::Fixed => [0.5, 0.5, 1.0, 1.0], // Blue
-                        urdf_core::JointType::Revolute => [0.2, 1.0, 0.2, 1.0], // Green
-                        urdf_core::JointType::Continuous => [0.2, 0.8, 1.0, 1.0], // Cyan
-                        urdf_core::JointType::Prismatic => [1.0, 0.5, 0.2, 1.0], // Orange
-                        _ => [0.8, 0.8, 0.8, 1.0],                           // Gray
-                    }
-                };
-                MarkerInstance::new(world_pos, 0.02, color)
-            })
-            .collect();
+        let mut normal_instances: Vec<MarkerInstance> = Vec::new();
+        let mut selected_instances: Vec<MarkerInstance> = Vec::new();
 
-        self.renderer.update_markers(&self.queue, &instances);
+        for (i, jp) in joint_points.iter().enumerate() {
+            let world_pos = part.origin_transform.transform_point3(jp.position);
+            let is_selected = Some(i) == selected_point;
+            let color = if is_selected {
+                [1.0, 0.8, 0.2, 1.0] // Gold for selected
+            } else {
+                match jp.joint_type {
+                    urdf_core::JointType::Fixed => [0.5, 0.5, 1.0, 1.0], // Blue
+                    urdf_core::JointType::Revolute => [0.2, 1.0, 0.2, 1.0], // Green
+                    urdf_core::JointType::Continuous => [0.2, 0.8, 1.0, 1.0], // Cyan
+                    urdf_core::JointType::Prismatic => [1.0, 0.5, 0.2, 1.0], // Orange
+                    _ => [0.8, 0.8, 0.8, 1.0],                           // Gray
+                }
+            };
+            let instance = MarkerInstance::new(world_pos, 0.02, color);
+
+            if is_selected {
+                selected_instances.push(instance);
+            } else {
+                normal_instances.push(instance);
+            }
+        }
+
+        self.renderer.update_markers(&self.queue, &normal_instances);
+        self.renderer
+            .update_selected_markers(&self.queue, &selected_instances);
     }
 
     /// Clear axes and markers
     pub fn clear_overlays(&mut self) {
         self.renderer.update_axes(&self.queue, &[]);
         self.renderer.update_markers(&self.queue, &[]);
+        self.renderer.update_selected_markers(&self.queue, &[]);
         self.renderer.hide_gizmo();
     }
 
@@ -322,7 +332,7 @@ impl ViewportState {
         let mode = self.renderer.gizmo_mode();
 
         match mode {
-            GizmoMode::Translate => {
+            GizmoMode::Translate | GizmoMode::Scale => {
                 // Calculate intersection point with the axis plane
                 let plane_normal = self.get_drag_plane_normal(axis);
 
@@ -377,6 +387,7 @@ impl ViewportState {
         match mode {
             GizmoMode::Translate => self.update_translate_drag(screen_x, screen_y, width, height),
             GizmoMode::Rotate => self.update_rotate_drag(screen_x, screen_y, width, height),
+            GizmoMode::Scale => self.update_scale_drag(screen_x, screen_y, width, height),
         }
     }
 
@@ -449,6 +460,50 @@ impl ViewportState {
             let rotation = Quat::from_axis_angle(rotation_axis, angle_delta);
 
             return Some(GizmoTransform::Rotation(rotation));
+        }
+
+        None
+    }
+
+    fn update_scale_drag(
+        &mut self,
+        screen_x: f32,
+        screen_y: f32,
+        width: f32,
+        height: f32,
+    ) -> Option<GizmoTransform> {
+        let (ray_origin, ray_dir) = self
+            .renderer
+            .camera()
+            .screen_to_ray(screen_x, screen_y, width, height);
+        let plane_normal = self.get_drag_plane_normal(self.gizmo.drag_axis);
+
+        if let Some(current_point) =
+            ray_plane_intersection(ray_origin, ray_dir, self.gizmo.gizmo_position, plane_normal)
+        {
+            let delta = current_point - self.gizmo.drag_start_pos;
+
+            // Project delta onto the axis
+            let axis_dir = self.gizmo.drag_axis.direction();
+            let projected_delta = delta.dot(axis_dir);
+
+            // Update drag start position for next frame
+            self.gizmo.drag_start_pos = current_point;
+
+            // Convert linear delta to scale factor (positive delta = scale up)
+            // Use sensitivity multiplier to make scaling feel natural
+            let scale_sensitivity = 2.0;
+            let scale_factor = 1.0 + projected_delta * scale_sensitivity;
+
+            // Create scale vector (only scale along the dragged axis)
+            let scale_delta = match self.gizmo.drag_axis {
+                GizmoAxis::X => Vec3::new(scale_factor, 1.0, 1.0),
+                GizmoAxis::Y => Vec3::new(1.0, scale_factor, 1.0),
+                GizmoAxis::Z => Vec3::new(1.0, 1.0, scale_factor),
+                GizmoAxis::None => Vec3::ONE,
+            };
+
+            return Some(GizmoTransform::Scale(scale_delta));
         }
 
         None

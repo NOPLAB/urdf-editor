@@ -8,7 +8,7 @@ use urdf_renderer::{GizmoAxis, GizmoMode};
 use crate::panels::Panel;
 use crate::state::{GizmoTransform, SharedAppState, SharedViewportState};
 
-use camera_overlay::{render_axes_indicator, render_camera_settings};
+use camera_overlay::{render_axes_indicator, render_camera_settings, render_gizmo_toggle};
 
 /// 3D viewport panel
 pub struct ViewportPanel {
@@ -101,23 +101,6 @@ impl Panel for ViewportPanel {
             }
             if ui.checkbox(&mut show_markers, "Markers").changed() {
                 state.renderer.set_show_markers(show_markers);
-            }
-
-            ui.separator();
-
-            ui.label("Gizmo:");
-            let current_mode = state.renderer.gizmo_mode();
-            if ui
-                .selectable_label(current_mode == GizmoMode::Translate, "Move (T)")
-                .clicked()
-            {
-                state.renderer.set_gizmo_mode(GizmoMode::Translate);
-            }
-            if ui
-                .selectable_label(current_mode == GizmoMode::Rotate, "Rotate (R)")
-                .clicked()
-            {
-                state.renderer.set_gizmo_mode(GizmoMode::Rotate);
             }
         });
 
@@ -278,6 +261,35 @@ impl Panel for ViewportPanel {
                         drop(app);
                     }
                 }
+                GizmoTransform::Scale(scale_delta) => {
+                    // Scaling the whole part
+                    if selected_joint_point.is_none() {
+                        let new_transform = if let Some(part) = app.get_part_mut(part_id) {
+                            let (old_scale, rotation, translation) =
+                                part.origin_transform.to_scale_rotation_translation();
+                            let new_scale = old_scale * scale_delta;
+                            part.origin_transform = glam::Mat4::from_scale_rotation_translation(
+                                new_scale,
+                                rotation,
+                                translation,
+                            );
+                            Some(part.origin_transform)
+                        } else {
+                            None
+                        };
+                        drop(app);
+
+                        // Update mesh renderer transform
+                        if let Some(transform) = new_transform {
+                            let mut vp = viewport_state.lock();
+                            vp.renderer
+                                .update_part_transform(&queue, part_id, transform);
+                            drop(vp);
+                        }
+                    } else {
+                        drop(app);
+                    }
+                }
             }
 
             // Re-lock viewport state for rest of handling
@@ -327,6 +339,9 @@ impl Panel for ViewportPanel {
                 if i.key_pressed(egui::Key::R) {
                     vp_state.renderer.set_gizmo_mode(GizmoMode::Rotate);
                 }
+                if i.key_pressed(egui::Key::S) {
+                    vp_state.renderer.set_gizmo_mode(GizmoMode::Scale);
+                }
             });
         }
 
@@ -358,6 +373,9 @@ impl Panel for ViewportPanel {
 
         // Draw axes indicator overlay
         render_axes_indicator(ui, response.rect, yaw, pitch);
+
+        // Draw gizmo mode toggle overlay (top-left)
+        render_gizmo_toggle(ui, response.rect, viewport_state);
 
         // Draw camera settings overlay (top-right, Unity-style)
         render_camera_settings(

@@ -15,7 +15,7 @@ use wgpu::util::DeviceExt;
 
 use crate::constants::gizmo as constants;
 use crate::constants::viewport::SAMPLE_COUNT;
-use geometry::{generate_rotation_gizmo, generate_translation_gizmo};
+use geometry::{generate_rotation_gizmo, generate_scale_gizmo, generate_translation_gizmo};
 
 /// Gizmo mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -23,6 +23,7 @@ pub enum GizmoMode {
     #[default]
     Translate,
     Rotate,
+    Scale,
 }
 
 /// Which axis is being manipulated
@@ -87,6 +88,10 @@ pub struct GizmoRenderer {
     rotate_vertex_buffer: wgpu::Buffer,
     rotate_index_buffer: wgpu::Buffer,
     rotate_index_count: u32,
+    // Scale gizmo buffers
+    scale_vertex_buffer: wgpu::Buffer,
+    scale_index_buffer: wgpu::Buffer,
+    scale_index_count: u32,
     // Shared buffers
     instance_buffer: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
@@ -252,6 +257,22 @@ impl GizmoRenderer {
             usage: wgpu::BufferUsages::INDEX,
         });
 
+        // Scale gizmo geometry
+        let (scale_vertices, scale_indices) = generate_scale_gizmo();
+        let scale_index_count = scale_indices.len() as u32;
+
+        let scale_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Gizmo Scale Vertex Buffer"),
+            contents: bytemuck::cast_slice(&scale_vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        let scale_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Gizmo Scale Index Buffer"),
+            contents: bytemuck::cast_slice(&scale_indices),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+
         let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Gizmo Instance Buffer"),
             contents: bytemuck::cast_slice(&[GizmoInstance::default()]),
@@ -266,6 +287,9 @@ impl GizmoRenderer {
             rotate_vertex_buffer,
             rotate_index_buffer,
             rotate_index_count,
+            scale_vertex_buffer,
+            scale_index_buffer,
+            scale_index_count,
             instance_buffer,
             bind_group,
             visible: false,
@@ -341,6 +365,13 @@ impl GizmoRenderer {
                 );
                 render_pass.draw_indexed(0..self.rotate_index_count, 0, 0..1);
             }
+            GizmoMode::Scale => {
+                render_pass.set_vertex_buffer(0, self.scale_vertex_buffer.slice(..));
+                render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+                render_pass
+                    .set_index_buffer(self.scale_index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                render_pass.draw_indexed(0..self.scale_index_count, 0, 0..1);
+            }
         }
     }
 
@@ -356,6 +387,7 @@ impl GizmoRenderer {
         match self.mode {
             GizmoMode::Translate => self.hit_test_translate(ray_origin, ray_dir, gizmo_pos, scale),
             GizmoMode::Rotate => self.hit_test_rotate(ray_origin, ray_dir, gizmo_pos, scale),
+            GizmoMode::Scale => self.hit_test_scale(ray_origin, ray_dir, gizmo_pos, scale),
         }
     }
 
@@ -431,4 +463,58 @@ impl GizmoRenderer {
 
         closest_axis
     }
+
+    fn hit_test_scale(
+        &self,
+        ray_origin: Vec3,
+        ray_dir: Vec3,
+        gizmo_pos: Vec3,
+        scale: f32,
+    ) -> GizmoAxis {
+        let axis_length = constants::SCALE_AXIS_LENGTH * scale;
+        let hit_size = constants::SCALE_HIT_SIZE * scale;
+
+        let mut closest_axis = GizmoAxis::None;
+        let mut closest_dist = f32::MAX;
+
+        for (axis, dir) in [
+            (GizmoAxis::X, Vec3::X),
+            (GizmoAxis::Y, Vec3::Y),
+            (GizmoAxis::Z, Vec3::Z),
+        ] {
+            // Test intersection with cube at end of axis (using cylinder approximation)
+            let cube_center = gizmo_pos + dir * axis_length;
+
+            // Simple sphere-based hit test for the cube
+            if let Some(dist) = ray_sphere_intersection(ray_origin, ray_dir, cube_center, hit_size)
+                && dist < closest_dist
+            {
+                closest_dist = dist;
+                closest_axis = axis;
+            }
+        }
+
+        closest_axis
+    }
+}
+
+/// Ray-sphere intersection helper for scale gizmo cube hit test
+fn ray_sphere_intersection(
+    ray_origin: Vec3,
+    ray_dir: Vec3,
+    sphere_center: Vec3,
+    radius: f32,
+) -> Option<f32> {
+    let oc = ray_origin - sphere_center;
+    let a = ray_dir.dot(ray_dir);
+    let b = 2.0 * oc.dot(ray_dir);
+    let c = oc.dot(oc) - radius * radius;
+    let discriminant = b * b - 4.0 * a * c;
+
+    if discriminant < 0.0 {
+        return None;
+    }
+
+    let t = (-b - discriminant.sqrt()) / (2.0 * a);
+    if t > 0.0 { Some(t) } else { None }
 }

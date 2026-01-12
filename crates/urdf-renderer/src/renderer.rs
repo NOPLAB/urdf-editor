@@ -394,6 +394,12 @@ impl Renderer {
         self.marker_renderer.update_instances(queue, instances);
     }
 
+    /// Update selected marker display (rendered on top)
+    pub fn update_selected_markers(&mut self, queue: &wgpu::Queue, instances: &[MarkerInstance]) {
+        self.marker_renderer
+            .update_selected_instances(queue, instances);
+    }
+
     /// Show gizmo at position
     pub fn show_gizmo(&mut self, queue: &wgpu::Queue, position: glam::Vec3, scale: f32) {
         self.gizmo_renderer.show(queue, position, scale);

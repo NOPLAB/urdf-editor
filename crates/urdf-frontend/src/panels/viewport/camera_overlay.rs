@@ -1,6 +1,7 @@
 //! Camera settings overlay for the 3D viewport
 
 use glam::Vec3;
+use urdf_renderer::GizmoMode;
 
 use crate::state::SharedViewportState;
 
@@ -131,6 +132,58 @@ pub fn render_camera_settings(
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             ui.label(format!("{:.2} m", vp.renderer.camera().distance));
                         });
+                    });
+                });
+        });
+}
+
+/// Render gizmo mode toggle in the top-left corner (floating UI)
+pub fn render_gizmo_toggle(
+    ui: &mut egui::Ui,
+    rect: egui::Rect,
+    viewport_state: &SharedViewportState,
+) {
+    let panel_margin = 10.0;
+
+    // Toggle buttons at top-left
+    let toggle_pos = egui::pos2(rect.left() + panel_margin, rect.top() + panel_margin);
+
+    egui::Area::new(egui::Id::new("gizmo_toggle"))
+        .fixed_pos(toggle_pos)
+        .order(egui::Order::Foreground)
+        .show(ui.ctx(), |ui| {
+            egui::Frame::popup(ui.style())
+                .fill(egui::Color32::from_rgba_unmultiplied(30, 30, 30, 220))
+                .rounding(4.0)
+                .stroke(egui::Stroke::new(1.0, egui::Color32::from_gray(60)))
+                .inner_margin(2.0)
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 2.0;
+
+                        let mut vp = viewport_state.lock();
+                        let current_mode = vp.renderer.gizmo_mode();
+
+                        let translate_btn = egui::Button::new("↔")
+                            .selected(current_mode == GizmoMode::Translate)
+                            .min_size(egui::vec2(24.0, 24.0));
+                        if ui.add(translate_btn).on_hover_text("Move (T)").clicked() {
+                            vp.renderer.set_gizmo_mode(GizmoMode::Translate);
+                        }
+
+                        let rotate_btn = egui::Button::new("⟳")
+                            .selected(current_mode == GizmoMode::Rotate)
+                            .min_size(egui::vec2(24.0, 24.0));
+                        if ui.add(rotate_btn).on_hover_text("Rotate (R)").clicked() {
+                            vp.renderer.set_gizmo_mode(GizmoMode::Rotate);
+                        }
+
+                        let scale_btn = egui::Button::new("⤢")
+                            .selected(current_mode == GizmoMode::Scale)
+                            .min_size(egui::vec2(24.0, 24.0));
+                        if ui.add(scale_btn).on_hover_text("Scale (S)").clicked() {
+                            vp.renderer.set_gizmo_mode(GizmoMode::Scale);
+                        }
                     });
                 });
         });

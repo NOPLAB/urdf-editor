@@ -41,10 +41,14 @@ impl Default for MarkerInstance {
 /// Marker renderer for joint points
 pub struct MarkerRenderer {
     pipeline: wgpu::RenderPipeline,
+    /// Pipeline for selected markers (always on top, no depth test)
+    selected_pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     index_count: u32,
     instances: InstanceBuffer<MarkerInstance>,
+    /// Selected marker instances (rendered on top)
+    selected_instances: InstanceBuffer<MarkerInstance>,
     bind_group: wgpu::BindGroup,
 }
 
@@ -77,6 +81,23 @@ impl MarkerRenderer {
             ],
         };
 
+        let instance_layout_clone = wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<MarkerInstance>() as u64,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    offset: 16,
+                    shader_location: 2,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+            ],
+        };
+
         let pipeline = PipelineConfig::new(
             "Marker",
             include_str!("shaders/marker.wgsl"),
@@ -86,6 +107,19 @@ impl MarkerRenderer {
         )
         .with_vertex_layouts(vec![PositionVertex::layout(), instance_layout])
         .with_cull_mode(Some(wgpu::Face::Back))
+        .build(device);
+
+        // Pipeline for selected markers - always on top (no depth test)
+        let selected_pipeline = PipelineConfig::new(
+            "Selected Marker",
+            include_str!("shaders/marker.wgsl"),
+            format,
+            depth_format,
+            &[camera_bind_group_layout],
+        )
+        .with_vertex_layouts(vec![PositionVertex::layout(), instance_layout_clone])
+        .with_cull_mode(Some(wgpu::Face::Back))
+        .without_depth_test()
         .build(device);
 
         // Generate sphere mesh
@@ -105,13 +139,17 @@ impl MarkerRenderer {
         });
 
         let instances = InstanceBuffer::new(device, "Marker", instances::MAX_MARKERS);
+        let selected_instances =
+            InstanceBuffer::new(device, "Selected Marker", instances::MAX_MARKERS);
 
         Self {
             pipeline,
+            selected_pipeline,
             vertex_buffer,
             index_buffer,
             index_count,
             instances,
+            selected_instances,
             bind_group,
         }
     }
@@ -121,22 +159,37 @@ impl MarkerRenderer {
         self.instances.update(queue, instances);
     }
 
+    /// Update selected marker instances (rendered on top)
+    pub fn update_selected_instances(&mut self, queue: &wgpu::Queue, instances: &[MarkerInstance]) {
+        self.selected_instances.update(queue, instances);
+    }
+
     /// Clear all markers
     pub fn clear(&mut self) {
         self.instances.clear();
+        self.selected_instances.clear();
     }
 
     pub fn render<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>) {
-        if self.instances.is_empty() {
-            return;
+        // Render normal markers first (with depth test)
+        if !self.instances.is_empty() {
+            render_pass.set_pipeline(&self.pipeline);
+            render_pass.set_bind_group(0, &self.bind_group, &[]);
+            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            render_pass.set_vertex_buffer(1, self.instances.slice());
+            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+            render_pass.draw_indexed(0..self.index_count, 0, 0..self.instances.count());
         }
 
-        render_pass.set_pipeline(&self.pipeline);
-        render_pass.set_bind_group(0, &self.bind_group, &[]);
-        render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        render_pass.set_vertex_buffer(1, self.instances.slice());
-        render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-        render_pass.draw_indexed(0..self.index_count, 0, 0..self.instances.count());
+        // Render selected markers on top (no depth test)
+        if !self.selected_instances.is_empty() {
+            render_pass.set_pipeline(&self.selected_pipeline);
+            render_pass.set_bind_group(0, &self.bind_group, &[]);
+            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            render_pass.set_vertex_buffer(1, self.selected_instances.slice());
+            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+            render_pass.draw_indexed(0..self.index_count, 0, 0..self.selected_instances.count());
+        }
     }
 }
 

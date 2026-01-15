@@ -80,11 +80,6 @@ fn vs_main(in: VertexInput) -> VertexOutput {
 
 // Calculate shadow factor using PCF (Percentage Closer Filtering)
 fn calculate_shadow(light_space_pos: vec4<f32>, normal: vec3<f32>, light_dir: vec3<f32>) -> f32 {
-    // Check if shadows are enabled
-    if (light.shadow_params.w < 0.5) {
-        return 1.0;
-    }
-
     // Perspective divide
     let proj_coords = light_space_pos.xyz / light_space_pos.w;
 
@@ -97,19 +92,22 @@ fn calculate_shadow(light_space_pos: vec4<f32>, normal: vec3<f32>, light_dir: ve
     // Current depth from light's perspective
     let current_depth = proj_coords.z;
 
-    // Outside shadow map bounds - no shadow
-    if (shadow_uv.x < 0.0 || shadow_uv.x > 1.0 ||
-        shadow_uv.y < 0.0 || shadow_uv.y > 1.0 ||
-        current_depth < 0.0 || current_depth > 1.0) {
-        return 1.0;
-    }
+    // Check if outside shadow map bounds (used later with select)
+    let in_bounds = shadow_uv.x >= 0.0 && shadow_uv.x <= 1.0 &&
+                    shadow_uv.y >= 0.0 && shadow_uv.y <= 1.0 &&
+                    current_depth >= 0.0 && current_depth <= 1.0;
+
+    // Clamp UV to valid range for sampling (required for uniform control flow)
+    let clamped_uv = clamp(shadow_uv, vec2<f32>(0.0), vec2<f32>(1.0));
+    let clamped_depth = clamp(current_depth, 0.0, 1.0);
 
     // Calculate bias based on surface angle to light
     let cos_theta = max(dot(normal, light_dir), 0.0);
     let bias = max(light.shadow_params.x * (1.0 - cos_theta), light.shadow_params.x * 0.5);
-    let biased_depth = current_depth - bias;
+    let biased_depth = clamped_depth - bias;
 
     // PCF filtering (3x3 kernel for soft shadows)
+    // Always sample to maintain uniform control flow
     let texel_size = 1.0 / 2048.0;  // Shadow map size
     var shadow = 0.0;
 
@@ -119,14 +117,16 @@ fn calculate_shadow(light_space_pos: vec4<f32>, normal: vec3<f32>, light_dir: ve
             shadow += textureSampleCompare(
                 shadow_map,
                 shadow_sampler,
-                shadow_uv + offset,
+                clamped_uv + offset,
                 biased_depth
             );
         }
     }
     shadow /= 9.0;
 
-    return shadow;
+    // If shadows disabled or outside bounds, return 1.0 (no shadow)
+    let shadows_enabled = light.shadow_params.w >= 0.5;
+    return select(1.0, shadow, shadows_enabled && in_bounds);
 }
 
 @fragment

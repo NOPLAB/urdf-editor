@@ -137,7 +137,7 @@ pub fn render_camera_settings(
         });
 }
 
-/// Render gizmo mode toggle in the top-left corner (floating UI) with slide animation
+/// Render gizmo mode toggle in the top-left corner (floating UI)
 /// Returns true if the collapsed state was toggled
 pub fn render_gizmo_toggle(
     ui: &mut egui::Ui,
@@ -146,15 +146,10 @@ pub fn render_gizmo_toggle(
     collapsed: &mut bool,
 ) -> bool {
     let panel_margin = 10.0;
-
-    // Animate the slide
-    let anim_id = egui::Id::new("gizmo_toolbar_anim");
-    let anim_value = ui.ctx().animate_bool_with_time(anim_id, *collapsed, 0.2);
-
     let mut toggled = false;
 
-    // When fully collapsed, show only the expand arrow button
-    if anim_value > 0.99 {
+    // When collapsed, show only the expand arrow button
+    if *collapsed {
         let arrow_pos = egui::pos2(rect.left() + panel_margin, rect.top() + panel_margin);
 
         egui::Area::new(egui::Id::new("gizmo_expand_btn"))
@@ -168,7 +163,7 @@ pub fn render_gizmo_toggle(
                     .inner_margin(2.0)
                     .show(ui, |ui| {
                         // Expand button (right arrow)
-                        let button_size = egui::vec2(16.0, 24.0);
+                        let button_size = egui::vec2(10.0, 24.0);
                         let (response, painter) =
                             ui.allocate_painter(button_size, egui::Sense::click());
 
@@ -181,8 +176,8 @@ pub fn render_gizmo_toggle(
                         }
 
                         let center = response.rect.center();
-                        let arrow_height = 6.0;
-                        let arrow_width = 4.0;
+                        let arrow_height = 5.0;
+                        let arrow_width = 3.0;
 
                         // Right pointing arrow
                         let tip = egui::pos2(center.x + arrow_width, center.y);
@@ -190,13 +185,13 @@ pub fn render_gizmo_toggle(
                         let bottom = egui::pos2(center.x - arrow_width, center.y + arrow_height);
 
                         let arrow_color = if response.hovered() {
-                            egui::Color32::WHITE
+                            egui::Color32::from_gray(200)
                         } else {
-                            egui::Color32::from_gray(160)
+                            egui::Color32::from_gray(100)
                         };
 
-                        painter.line_segment([top, tip], egui::Stroke::new(1.5, arrow_color));
-                        painter.line_segment([tip, bottom], egui::Stroke::new(1.5, arrow_color));
+                        painter.line_segment([top, tip], egui::Stroke::new(1.0, arrow_color));
+                        painter.line_segment([tip, bottom], egui::Stroke::new(1.0, arrow_color));
 
                         if response.clicked() {
                             *collapsed = false;
@@ -210,30 +205,19 @@ pub fn render_gizmo_toggle(
         return toggled;
     }
 
-    // When expanded or animating, show the full toolbar
-    let toolbar_width = 170.0; // Full toolbar width including arrow
-    let slide_offset = anim_value * (toolbar_width + panel_margin);
-    let toggle_pos = egui::pos2(
-        rect.left() + panel_margin - slide_offset,
-        rect.top() + panel_margin,
-    );
+    // When expanded, show the full toolbar
+    let toggle_pos = egui::pos2(rect.left() + panel_margin, rect.top() + panel_margin);
 
     egui::Area::new(egui::Id::new("gizmo_toggle"))
         .fixed_pos(toggle_pos)
         .order(egui::Order::Foreground)
-        .constrain_to(rect) // Constrain to viewport rect
         .show(ui.ctx(), |ui| {
-            // Set clip rect to viewport bounds
-            ui.set_clip_rect(rect);
-
             egui::Frame::popup(ui.style())
                 .fill(egui::Color32::from_rgba_unmultiplied(30, 30, 30, 220))
                 .corner_radius(4.0)
                 .stroke(egui::Stroke::new(1.0, egui::Color32::from_gray(60)))
                 .inner_margin(2.0)
                 .show(ui, |ui| {
-                    ui.set_clip_rect(rect);
-
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 2.0;
 
@@ -287,8 +271,8 @@ pub fn render_gizmo_toggle(
                         ui.separator();
                         ui.add_space(2.0);
 
-                        // Collapse/expand toggle button (thin arrow)
-                        let button_size = egui::vec2(16.0, 24.0);
+                        // Collapse toggle button (thin arrow)
+                        let button_size = egui::vec2(10.0, 24.0);
                         let (response, painter) =
                             ui.allocate_painter(button_size, egui::Sense::click());
 
@@ -303,8 +287,8 @@ pub fn render_gizmo_toggle(
 
                         // Draw arrow
                         let center = response.rect.center();
-                        let arrow_height = 6.0;
-                        let arrow_width = 4.0;
+                        let arrow_height = 5.0;
+                        let arrow_width = 3.0;
 
                         // Arrow direction: left when expanded (to collapse)
                         let tip = egui::pos2(center.x - arrow_width, center.y);
@@ -312,14 +296,14 @@ pub fn render_gizmo_toggle(
                         let bottom = egui::pos2(center.x + arrow_width, center.y + arrow_height);
 
                         let arrow_color = if response.hovered() {
-                            egui::Color32::WHITE
+                            egui::Color32::from_gray(200)
                         } else {
-                            egui::Color32::from_gray(160)
+                            egui::Color32::from_gray(100)
                         };
 
-                        // Draw thin arrow (just lines, not filled)
-                        painter.line_segment([top, tip], egui::Stroke::new(1.5, arrow_color));
-                        painter.line_segment([tip, bottom], egui::Stroke::new(1.5, arrow_color));
+                        // Draw thin arrow (just lines)
+                        painter.line_segment([top, tip], egui::Stroke::new(1.0, arrow_color));
+                        painter.line_segment([tip, bottom], egui::Stroke::new(1.0, arrow_color));
 
                         if response.clicked() {
                             *collapsed = true;

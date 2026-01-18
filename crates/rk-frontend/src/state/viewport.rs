@@ -394,7 +394,7 @@ impl ViewportState {
         ) {
             let offset = current_point - self.gizmo.gizmo_position;
             let current_angle = self.angle_on_plane(offset, rotation_axis);
-            let angle_delta = current_angle - self.gizmo.drag_start_angle;
+            let angle_delta = self.gizmo.drag_start_angle - current_angle;
 
             // Update start angle for next frame
             self.gizmo.drag_start_angle = current_angle;

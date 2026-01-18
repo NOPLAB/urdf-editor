@@ -27,7 +27,7 @@ pub use grid::GridSubRenderer;
 
 // Re-exports for legacy code
 pub use axis::{AxisInstance, AxisRenderer};
-pub use gizmo::{GizmoAxis, GizmoMode, GizmoRenderer};
+pub use gizmo::{GizmoAxis, GizmoMode, GizmoRenderer, GizmoSpace};
 pub use grid_legacy::GridRenderer;
 pub use marker::{MarkerInstance, MarkerRenderer};
 pub use mesh::{MeshData, MeshRenderer, MeshVertex};

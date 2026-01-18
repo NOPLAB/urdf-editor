@@ -10,7 +10,7 @@ pub use collision::{ray_cylinder_intersection, ray_ring_intersection};
 pub use geometry::GizmoVertex;
 
 use bytemuck::{Pod, Zeroable};
-use glam::{Mat4, Vec3};
+use glam::{Mat4, Quat, Vec3};
 use wgpu::util::DeviceExt;
 
 use crate::constants::gizmo as constants;
@@ -24,6 +24,14 @@ pub enum GizmoMode {
     Translate,
     Rotate,
     Scale,
+}
+
+/// Gizmo coordinate space
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum GizmoSpace {
+    #[default]
+    Global,
+    Local,
 }
 
 /// Which axis is being manipulated
@@ -124,8 +132,13 @@ pub struct GizmoRenderer {
     config_uniform: GizmoConfigUniform,
     pub visible: bool,
     pub mode: GizmoMode,
+    pub space: GizmoSpace,
     pub highlighted_axis: GizmoAxis,
     instance: GizmoInstance,
+    /// Object rotation for local coordinate space
+    object_rotation: Quat,
+    /// Gizmo position (for hit testing)
+    gizmo_position: Vec3,
 }
 
 impl GizmoRenderer {
@@ -356,14 +369,23 @@ impl GizmoRenderer {
             config_uniform,
             visible: false,
             mode: GizmoMode::Translate,
+            space: GizmoSpace::Global,
             highlighted_axis: GizmoAxis::None,
             instance: GizmoInstance::default(),
+            object_rotation: Quat::IDENTITY,
+            gizmo_position: Vec3::ZERO,
         }
     }
 
     /// Set gizmo position and scale
     pub fn set_transform(&mut self, queue: &wgpu::Queue, position: Vec3, scale: f32) {
-        self.instance.transform = Mat4::from_translation(position).to_cols_array_2d();
+        self.gizmo_position = position;
+        // Apply rotation in local space mode
+        let transform = match self.space {
+            GizmoSpace::Global => Mat4::from_translation(position),
+            GizmoSpace::Local => Mat4::from_rotation_translation(self.object_rotation, position),
+        };
+        self.instance.transform = transform.to_cols_array_2d();
         self.instance.scale = scale;
         self.update_buffer(queue);
     }
@@ -397,6 +419,45 @@ impl GizmoRenderer {
     /// Set gizmo mode
     pub fn set_mode(&mut self, mode: GizmoMode) {
         self.mode = mode;
+    }
+
+    /// Get current coordinate space
+    pub fn space(&self) -> GizmoSpace {
+        self.space
+    }
+
+    /// Set coordinate space
+    pub fn set_space(&mut self, queue: &wgpu::Queue, space: GizmoSpace) {
+        self.space = space;
+        // Refresh transform to apply rotation change
+        let pos = self.gizmo_position;
+        let scale = self.instance.scale;
+        self.set_transform(queue, pos, scale);
+    }
+
+    /// Set object rotation for local coordinate space
+    pub fn set_object_rotation(&mut self, queue: &wgpu::Queue, rotation: Quat) {
+        self.object_rotation = rotation;
+        // Refresh transform if in local mode
+        if self.space == GizmoSpace::Local {
+            let pos = self.gizmo_position;
+            let scale = self.instance.scale;
+            self.set_transform(queue, pos, scale);
+        }
+    }
+
+    /// Get axis direction based on current coordinate space
+    pub fn get_axis_direction(&self, axis: GizmoAxis) -> Vec3 {
+        let local_dir = axis.direction();
+        match self.space {
+            GizmoSpace::Global => local_dir,
+            GizmoSpace::Local => self.object_rotation * local_dir,
+        }
+    }
+
+    /// Get the object rotation
+    pub fn object_rotation(&self) -> Quat {
+        self.object_rotation
     }
 
     /// Set gizmo axis colors from config
@@ -490,11 +551,9 @@ impl GizmoRenderer {
         let mut closest_axis = GizmoAxis::None;
         let mut closest_dist = f32::MAX;
 
-        for (axis, dir) in [
-            (GizmoAxis::X, Vec3::X),
-            (GizmoAxis::Y, Vec3::Y),
-            (GizmoAxis::Z, Vec3::Z),
-        ] {
+        for axis in [GizmoAxis::X, GizmoAxis::Y, GizmoAxis::Z] {
+            // Get axis direction based on coordinate space
+            let dir = self.get_axis_direction(axis);
             // Test intersection with cylinder along axis
             let axis_start = gizmo_pos;
             let axis_end = gizmo_pos + dir * handle_length;
@@ -528,11 +587,9 @@ impl GizmoRenderer {
         let mut closest_axis = GizmoAxis::None;
         let mut closest_dist = f32::MAX;
 
-        for (axis, normal) in [
-            (GizmoAxis::X, Vec3::X),
-            (GizmoAxis::Y, Vec3::Y),
-            (GizmoAxis::Z, Vec3::Z),
-        ] {
+        for axis in [GizmoAxis::X, GizmoAxis::Y, GizmoAxis::Z] {
+            // Get axis direction (ring normal) based on coordinate space
+            let normal = self.get_axis_direction(axis);
             if let Some(dist) = collision::ray_ring_intersection(
                 ray_origin,
                 ray_dir,
@@ -563,11 +620,9 @@ impl GizmoRenderer {
         let mut closest_axis = GizmoAxis::None;
         let mut closest_dist = f32::MAX;
 
-        for (axis, dir) in [
-            (GizmoAxis::X, Vec3::X),
-            (GizmoAxis::Y, Vec3::Y),
-            (GizmoAxis::Z, Vec3::Z),
-        ] {
+        for axis in [GizmoAxis::X, GizmoAxis::Y, GizmoAxis::Z] {
+            // Get axis direction based on coordinate space
+            let dir = self.get_axis_direction(axis);
             // Test intersection with cube at end of axis (using cylinder approximation)
             let cube_center = gizmo_pos + dir * axis_length;
 

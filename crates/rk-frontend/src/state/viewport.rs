@@ -207,12 +207,18 @@ impl ViewportState {
         // Use fixed scale - shader handles distance-based scaling for constant screen size
         let scale = 1.0;
 
+        // Extract rotation from part's transform for local coordinate space
+        let (_, rotation, _) = part.origin_transform.to_scale_rotation_translation();
+
         // Store gizmo state
         self.gizmo.gizmo_position = world_center;
         self.gizmo.gizmo_scale = scale;
         self.gizmo.part_id = Some(part.id);
         self.gizmo.part_start_transform = part.origin_transform;
 
+        // Set object rotation for local coordinate space
+        self.renderer
+            .set_gizmo_object_rotation(&self.queue, rotation);
         self.renderer.show_gizmo(&self.queue, world_center, scale);
     }
 
@@ -285,7 +291,8 @@ impl ViewportState {
             }
             GizmoMode::Rotate => {
                 // For rotation, intersect with the plane perpendicular to the rotation axis
-                let rotation_axis = axis.direction();
+                // Use coordinate space-aware axis direction
+                let rotation_axis = self.renderer.gizmo_axis_direction(axis);
 
                 if let Some(point) = ray_plane_intersection(
                     ray_origin,
@@ -298,7 +305,7 @@ impl ViewportState {
                     self.gizmo.drag_start_pos = point;
                     // Calculate initial angle from gizmo center
                     let offset = point - self.gizmo.gizmo_position;
-                    self.gizmo.drag_start_angle = self.angle_on_plane(offset, axis);
+                    self.gizmo.drag_start_angle = self.angle_on_plane(offset, rotation_axis);
                     self.renderer.set_gizmo_highlight(&self.queue, axis);
                 }
             }
@@ -344,8 +351,8 @@ impl ViewportState {
         {
             let delta = current_point - self.gizmo.drag_start_pos;
 
-            // Project delta onto the axis
-            let axis_dir = self.gizmo.drag_axis.direction();
+            // Project delta onto the axis (using coordinate space-aware direction)
+            let axis_dir = self.renderer.gizmo_axis_direction(self.gizmo.drag_axis);
             let projected_delta = axis_dir * delta.dot(axis_dir);
 
             // Update gizmo position
@@ -376,7 +383,8 @@ impl ViewportState {
             .renderer
             .camera()
             .screen_to_ray(screen_x, screen_y, width, height);
-        let rotation_axis = self.gizmo.drag_axis.direction();
+        // Use coordinate space-aware rotation axis
+        let rotation_axis = self.renderer.gizmo_axis_direction(self.gizmo.drag_axis);
 
         if let Some(current_point) = ray_plane_intersection(
             ray_origin,
@@ -385,7 +393,7 @@ impl ViewportState {
             rotation_axis,
         ) {
             let offset = current_point - self.gizmo.gizmo_position;
-            let current_angle = self.angle_on_plane(offset, self.gizmo.drag_axis);
+            let current_angle = self.angle_on_plane(offset, rotation_axis);
             let angle_delta = current_angle - self.gizmo.drag_start_angle;
 
             // Update start angle for next frame
@@ -418,8 +426,8 @@ impl ViewportState {
         {
             let delta = current_point - self.gizmo.drag_start_pos;
 
-            // Project delta onto the axis
-            let axis_dir = self.gizmo.drag_axis.direction();
+            // Project delta onto the axis (using coordinate space-aware direction)
+            let axis_dir = self.renderer.gizmo_axis_direction(self.gizmo.drag_axis);
             let projected_delta = delta.dot(axis_dir);
 
             // Update drag start position for next frame
@@ -444,14 +452,21 @@ impl ViewportState {
         None
     }
 
-    /// Calculate angle of a point on a plane perpendicular to the given axis
-    fn angle_on_plane(&self, offset: Vec3, axis: GizmoAxis) -> f32 {
-        match axis {
-            GizmoAxis::X => offset.z.atan2(offset.y),
-            GizmoAxis::Y => offset.x.atan2(offset.z),
-            GizmoAxis::Z => offset.y.atan2(offset.x),
-            GizmoAxis::None => 0.0,
-        }
+    /// Calculate angle of a point on a plane perpendicular to the given axis direction
+    fn angle_on_plane(&self, offset: Vec3, axis_dir: Vec3) -> f32 {
+        // Create orthonormal basis on the plane perpendicular to axis_dir
+        let up = if axis_dir.y.abs() < 0.9 {
+            Vec3::Y
+        } else {
+            Vec3::X
+        };
+        let u = axis_dir.cross(up).normalize();
+        let v = u.cross(axis_dir).normalize();
+
+        // Project offset onto the plane and calculate angle
+        let x = offset.dot(u);
+        let y = offset.dot(v);
+        y.atan2(x)
     }
 
     /// End gizmo drag
@@ -464,33 +479,31 @@ impl ViewportState {
 
     /// Get the plane normal for dragging on an axis
     fn get_drag_plane_normal(&self, axis: GizmoAxis) -> Vec3 {
+        if axis == GizmoAxis::None {
+            let camera = self.renderer.camera();
+            return (camera.target - camera.position).normalize();
+        }
+
         let camera = self.renderer.camera();
         let camera_forward = (camera.target - camera.position).normalize();
 
-        match axis {
-            GizmoAxis::X => {
-                // Use plane with normal most perpendicular to X
-                if camera_forward.y.abs() > camera_forward.z.abs() {
-                    Vec3::Y
-                } else {
-                    Vec3::Z
-                }
-            }
-            GizmoAxis::Y => {
-                if camera_forward.x.abs() > camera_forward.z.abs() {
-                    Vec3::X
-                } else {
-                    Vec3::Z
-                }
-            }
-            GizmoAxis::Z => {
-                if camera_forward.x.abs() > camera_forward.y.abs() {
-                    Vec3::X
-                } else {
-                    Vec3::Y
-                }
-            }
-            GizmoAxis::None => camera_forward,
+        // Get the axis direction in current coordinate space
+        let axis_dir = self.renderer.gizmo_axis_direction(axis);
+
+        // Create two candidate normals perpendicular to the axis
+        let up = if axis_dir.y.abs() < 0.9 {
+            Vec3::Y
+        } else {
+            Vec3::X
+        };
+        let candidate1 = axis_dir.cross(up).normalize();
+        let candidate2 = axis_dir.cross(candidate1).normalize();
+
+        // Choose the candidate that is most facing the camera
+        if camera_forward.dot(candidate1).abs() > camera_forward.dot(candidate2).abs() {
+            candidate1
+        } else {
+            candidate2
         }
     }
 

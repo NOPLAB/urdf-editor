@@ -78,8 +78,8 @@ pub use resources::MeshData as ResourceMeshData;
 pub use resources::{GpuMesh, MeshHandle, MeshManager};
 pub use scene::{BoundingBox, Frustum, RenderLayer, RenderObject, Scene};
 pub use sub_renderers::{
-    AxisInstance, AxisRenderer, GizmoAxis, GizmoMode, GizmoRenderer, GridRenderer, GridSubRenderer,
-    MarkerInstance, MarkerRenderer, MeshRenderer,
+    AxisInstance, AxisRenderer, GizmoAxis, GizmoMode, GizmoRenderer, GizmoSpace, GridRenderer,
+    GridSubRenderer, MarkerInstance, MarkerRenderer, MeshRenderer,
 };
 pub use traits::{PassType, SubRenderer};
 pub use vertex::MeshVertex;

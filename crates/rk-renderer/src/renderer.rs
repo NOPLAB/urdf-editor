@@ -32,8 +32,8 @@ use crate::plugin::RendererRegistry;
 use crate::resources::MeshManager;
 use crate::scene::Scene;
 use crate::sub_renderers::{
-    AxisInstance, AxisRenderer, GizmoAxis, GizmoMode, GizmoRenderer, GridRenderer, MarkerInstance,
-    MarkerRenderer, MeshData, MeshRenderer,
+    AxisInstance, AxisRenderer, GizmoAxis, GizmoMode, GizmoRenderer, GizmoSpace, GridRenderer,
+    MarkerInstance, MarkerRenderer, MeshData, MeshRenderer,
 };
 
 /// Mesh entry with bind group
@@ -683,6 +683,31 @@ impl Renderer {
     /// Get current gizmo mode
     pub fn gizmo_mode(&self) -> GizmoMode {
         self.gizmo_renderer.mode
+    }
+
+    /// Set gizmo coordinate space
+    pub fn set_gizmo_space(&mut self, queue: &wgpu::Queue, space: GizmoSpace) {
+        self.gizmo_renderer.set_space(queue, space);
+    }
+
+    /// Get current gizmo coordinate space
+    pub fn gizmo_space(&self) -> GizmoSpace {
+        self.gizmo_renderer.space()
+    }
+
+    /// Set object rotation for local coordinate space
+    pub fn set_gizmo_object_rotation(&mut self, queue: &wgpu::Queue, rotation: glam::Quat) {
+        self.gizmo_renderer.set_object_rotation(queue, rotation);
+    }
+
+    /// Get the current object rotation for the gizmo
+    pub fn gizmo_object_rotation(&self) -> glam::Quat {
+        self.gizmo_renderer.object_rotation()
+    }
+
+    /// Get axis direction based on current coordinate space
+    pub fn gizmo_axis_direction(&self, axis: GizmoAxis) -> glam::Vec3 {
+        self.gizmo_renderer.get_axis_direction(axis)
     }
 
     /// Render the scene.

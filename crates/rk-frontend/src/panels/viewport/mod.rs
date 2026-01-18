@@ -3,7 +3,7 @@
 mod camera_overlay;
 
 use glam::Vec3;
-use rk_renderer::{GizmoAxis, GizmoMode};
+use rk_renderer::{GizmoAxis, GizmoMode, GizmoSpace};
 
 use crate::config::SharedConfig;
 use crate::panels::Panel;
@@ -372,6 +372,16 @@ impl Panel for ViewportPanel {
                 }
                 if i.key_pressed(egui::Key::S) {
                     vp_state.renderer.set_gizmo_mode(GizmoMode::Scale);
+                }
+                // Toggle coordinate space (G key)
+                if i.key_pressed(egui::Key::G) {
+                    let current_space = vp_state.renderer.gizmo_space();
+                    let next_space = match current_space {
+                        GizmoSpace::Global => GizmoSpace::Local,
+                        GizmoSpace::Local => GizmoSpace::Global,
+                    };
+                    let queue = vp_state.queue.clone();
+                    vp_state.renderer.set_gizmo_space(&queue, next_space);
                 }
             });
         }

@@ -1,7 +1,7 @@
 //! Camera settings overlay for the 3D viewport
 
 use glam::Vec3;
-use rk_renderer::GizmoMode;
+use rk_renderer::{GizmoMode, GizmoSpace};
 
 use crate::state::SharedViewportState;
 
@@ -163,7 +163,9 @@ pub fn render_gizmo_toggle(
 
                         let mut vp = viewport_state.lock();
                         let current_mode = vp.renderer.gizmo_mode();
+                        let current_space = vp.renderer.gizmo_space();
 
+                        // Mode buttons
                         let translate_btn = egui::Button::new("↔")
                             .selected(current_mode == GizmoMode::Translate)
                             .min_size(egui::vec2(24.0, 24.0));
@@ -183,6 +185,23 @@ pub fn render_gizmo_toggle(
                             .min_size(egui::vec2(24.0, 24.0));
                         if ui.add(scale_btn).on_hover_text("Scale (S)").clicked() {
                             vp.renderer.set_gizmo_mode(GizmoMode::Scale);
+                        }
+
+                        // Separator
+                        ui.add_space(4.0);
+                        ui.separator();
+                        ui.add_space(4.0);
+
+                        // Coordinate space toggle
+                        let (space_icon, space_text, next_space) = match current_space {
+                            GizmoSpace::Global => ("🌐", "Global (G)", GizmoSpace::Local),
+                            GizmoSpace::Local => ("📦", "Local (G)", GizmoSpace::Global),
+                        };
+                        let space_btn =
+                            egui::Button::new(space_icon).min_size(egui::vec2(24.0, 24.0));
+                        if ui.add(space_btn).on_hover_text(space_text).clicked() {
+                            let queue = vp.queue.clone();
+                            vp.renderer.set_gizmo_space(&queue, next_space);
                         }
                     });
                 });

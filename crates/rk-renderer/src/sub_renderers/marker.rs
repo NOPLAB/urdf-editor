@@ -13,12 +13,16 @@ use crate::vertex::PositionVertex;
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct MarkerInstance {
+    /// Marker center position in world space.
     pub position: [f32; 3],
+    /// Marker sphere radius.
     pub radius: f32,
+    /// Marker color (RGBA).
     pub color: [f32; 4],
 }
 
 impl MarkerInstance {
+    /// Creates a new marker instance.
     pub fn new(position: Vec3, radius: f32, color: [f32; 4]) -> Self {
         Self {
             position: position.to_array(),
@@ -53,6 +57,7 @@ pub struct MarkerRenderer {
 }
 
 impl MarkerRenderer {
+    /// Creates a new marker renderer.
     pub fn new(
         device: &wgpu::Device,
         format: wgpu::TextureFormat,
@@ -170,6 +175,7 @@ impl MarkerRenderer {
         self.selected_instances.clear();
     }
 
+    /// Renders all marker instances.
     pub fn render<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>) {
         // Render normal markers first (with depth test)
         if !self.instances.is_empty() {

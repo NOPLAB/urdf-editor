@@ -15,8 +15,11 @@ use crate::constants::gizmo::{
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct GizmoVertex {
+    /// Vertex position in local space.
     pub position: [f32; 3],
+    /// Vertex color (RGBA).
     pub color: [f32; 4],
+    /// Axis identifier (0=X, 1=Y, 2=Z).
     pub axis_id: u32,
 }
 

@@ -20,31 +20,41 @@ use geometry::{generate_rotation_gizmo, generate_scale_gizmo, generate_translati
 /// Gizmo mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum GizmoMode {
+    /// Translation mode (move along axes).
     #[default]
     Translate,
+    /// Rotation mode (rotate around axes).
     Rotate,
+    /// Scale mode (scale along axes).
     Scale,
 }
 
 /// Gizmo coordinate space
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum GizmoSpace {
+    /// World coordinate space.
     #[default]
     Global,
+    /// Object-local coordinate space.
     Local,
 }
 
 /// Which axis is being manipulated
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum GizmoAxis {
+    /// No axis selected.
     #[default]
     None,
+    /// X axis (red).
     X,
+    /// Y axis (green).
     Y,
+    /// Z axis (blue).
     Z,
 }
 
 impl GizmoAxis {
+    /// Converts the axis to an index (-1=None, 0=X, 1=Y, 2=Z).
     pub fn to_index(&self) -> i32 {
         match self {
             GizmoAxis::None => -1,
@@ -54,6 +64,7 @@ impl GizmoAxis {
         }
     }
 
+    /// Returns the unit vector direction for this axis.
     pub fn direction(&self) -> Vec3 {
         match self {
             GizmoAxis::None => Vec3::ZERO,
@@ -68,10 +79,15 @@ impl GizmoAxis {
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct GizmoConfigUniform {
+    /// X axis color (RGBA).
     pub x_axis_color: [f32; 4],
+    /// Y axis color (RGBA).
     pub y_axis_color: [f32; 4],
+    /// Z axis color (RGBA).
     pub z_axis_color: [f32; 4],
+    /// Whether to use config colors (1.0) or vertex colors (0.0).
     pub use_config_colors: f32,
+    /// Padding for alignment.
     pub _pad: [f32; 3],
 }
 
@@ -91,9 +107,13 @@ impl Default for GizmoConfigUniform {
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct GizmoInstance {
+    /// Transformation matrix for the gizmo.
     pub transform: [[f32; 4]; 4],
+    /// Scale factor.
     pub scale: f32,
-    pub highlighted_axis: f32, // -1=none, 0=X, 1=Y, 2=Z
+    /// Highlighted axis (-1=none, 0=X, 1=Y, 2=Z).
+    pub highlighted_axis: f32,
+    /// Padding for alignment.
     pub _pad: [f32; 2],
 }
 
@@ -130,9 +150,13 @@ pub struct GizmoRenderer {
     config_buffer: wgpu::Buffer,
     config_bind_group: wgpu::BindGroup,
     config_uniform: GizmoConfigUniform,
+    /// Whether the gizmo is currently visible.
     pub visible: bool,
+    /// Current gizmo mode (translate/rotate/scale).
     pub mode: GizmoMode,
+    /// Current coordinate space (global/local).
     pub space: GizmoSpace,
+    /// Currently highlighted axis.
     pub highlighted_axis: GizmoAxis,
     instance: GizmoInstance,
     /// Object rotation for local coordinate space
@@ -142,6 +166,7 @@ pub struct GizmoRenderer {
 }
 
 impl GizmoRenderer {
+    /// Creates a new gizmo renderer.
     pub fn new(
         device: &wgpu::Device,
         format: wgpu::TextureFormat,
@@ -483,6 +508,7 @@ impl GizmoRenderer {
         );
     }
 
+    /// Renders the gizmo.
     pub fn render<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>) {
         if !self.visible {
             return;

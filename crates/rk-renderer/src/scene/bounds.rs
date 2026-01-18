@@ -5,7 +5,9 @@ use glam::{Mat4, Vec3};
 /// Axis-aligned bounding box.
 #[derive(Debug, Clone, Copy)]
 pub struct BoundingBox {
+    /// Minimum corner of the bounding box.
     pub min: Vec3,
+    /// Maximum corner of the bounding box.
     pub max: Vec3,
 }
 
@@ -137,7 +139,9 @@ pub struct Frustum {
 /// A plane in 3D space (ax + by + cz + d = 0).
 #[derive(Debug, Clone, Copy)]
 pub struct Plane {
+    /// Normal vector of the plane.
     pub normal: Vec3,
+    /// Distance from origin along the normal.
     pub distance: f32,
 }
 

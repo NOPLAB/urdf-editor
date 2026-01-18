@@ -15,6 +15,7 @@ pub struct GridRenderer {
 }
 
 impl GridRenderer {
+    /// Creates a new grid renderer.
     pub fn new(
         device: &wgpu::Device,
         format: wgpu::TextureFormat,
@@ -54,6 +55,7 @@ impl GridRenderer {
         }
     }
 
+    /// Renders the grid.
     pub fn render<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>) {
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_bind_group(0, &self.bind_group, &[]);

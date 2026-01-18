@@ -6,7 +6,7 @@ mod geometry;
 mod options;
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use glam::Vec3;
 use uuid::Uuid;
@@ -17,8 +17,8 @@ use crate::part::{JointLimits, JointType, Part};
 use crate::project::{MaterialDef, Project};
 
 pub use geometry::{
-    create_part_from_mesh, process_collision_geometry, process_geometry, process_visual_geometry,
-    resolve_mesh_path,
+    GeometryContext, create_part_from_mesh, process_collision_geometry, process_geometry,
+    process_visual_geometry, resolve_mesh_path,
 };
 pub use options::ImportOptions;
 
@@ -59,26 +59,56 @@ pub enum ImportError {
 /// # Returns
 /// A Project containing all parts, links, joints, and materials from the URDF
 pub fn import_urdf(urdf_path: &Path, options: &ImportOptions) -> Result<Project, ImportError> {
-    // Read and parse URDF
     let robot = urdf_rs::read_file(urdf_path).map_err(|e| ImportError::UrdfParse(e.to_string()))?;
-
-    // Set base_dir to URDF file's parent directory if not specified
-    let base_dir = if options.base_dir.as_os_str() == "." {
-        urdf_path
-            .parent()
-            .map(|p| p.to_path_buf())
-            .unwrap_or_else(|| std::path::PathBuf::from("."))
-    } else {
-        options.base_dir.clone()
-    };
 
     if robot.links.is_empty() {
         return Err(ImportError::EmptyUrdf);
     }
 
-    // Collect materials
-    let materials: Vec<MaterialDef> = robot
-        .materials
+    let base_dir = resolve_base_dir(urdf_path, options);
+    let (materials, material_colors) = collect_materials(&robot.materials, options);
+
+    let ctx = GeometryContext {
+        base_dir: &base_dir,
+        options,
+        material_colors: &material_colors,
+        package_paths: &options.package_paths,
+    };
+
+    let (mut parts, links, link_name_to_id) = process_urdf_links(&robot.links, &ctx)?;
+
+    let mut assembly = Assembly::new(&robot.name);
+    assembly.links = links;
+    assembly.rebuild_indices();
+
+    process_urdf_joints(&robot.joints, &link_name_to_id, &mut assembly)?;
+
+    assembly.rebuild_indices();
+    assembly.update_world_transforms();
+
+    apply_world_transforms_to_parts(&assembly, &mut parts);
+
+    Ok(Project::with_parts(robot.name, parts, assembly, materials))
+}
+
+/// Resolve the base directory for mesh path resolution
+fn resolve_base_dir(urdf_path: &Path, options: &ImportOptions) -> PathBuf {
+    if options.base_dir.as_os_str() == "." {
+        urdf_path
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| PathBuf::from("."))
+    } else {
+        options.base_dir.clone()
+    }
+}
+
+/// Collect materials from URDF and create lookup map
+fn collect_materials(
+    urdf_materials: &[urdf_rs::Material],
+    options: &ImportOptions,
+) -> (Vec<MaterialDef>, HashMap<String, [f32; 4]>) {
+    let materials: Vec<MaterialDef> = urdf_materials
         .iter()
         .map(|m| {
             let color = m
@@ -97,49 +127,48 @@ pub fn import_urdf(urdf_path: &Path, options: &ImportOptions) -> Result<Project,
         })
         .collect();
 
-    // Create material lookup map
     let material_colors: HashMap<String, [f32; 4]> = materials
         .iter()
         .map(|m| (m.name.clone(), m.color))
         .collect();
 
-    // Build link name -> ID mapping
-    let mut link_name_to_id: HashMap<String, Uuid> = HashMap::new();
+    (materials, material_colors)
+}
 
-    // Process links: create Parts and Links
+/// Process URDF links and create Parts and Links
+#[allow(clippy::type_complexity)]
+fn process_urdf_links(
+    urdf_links: &[urdf_rs::Link],
+    ctx: &GeometryContext,
+) -> Result<
+    (
+        HashMap<Uuid, Part>,
+        HashMap<Uuid, Link>,
+        HashMap<String, Uuid>,
+    ),
+    ImportError,
+> {
     let mut parts: HashMap<Uuid, Part> = HashMap::new();
     let mut links: HashMap<Uuid, Link> = HashMap::new();
+    let mut link_name_to_id: HashMap<String, Uuid> = HashMap::new();
 
-    for urdf_link in &robot.links {
+    for urdf_link in urdf_links {
         let link_id = Uuid::new_v4();
         link_name_to_id.insert(urdf_link.name.clone(), link_id);
 
-        // Try to load mesh from visual geometry
-        let (part_opt, visuals) = process_visual_geometry(
-            &urdf_link.visual,
-            &urdf_link.name,
-            &base_dir,
-            options,
-            &material_colors,
-            &options.package_paths,
-        )?;
+        let (part_opt, visuals) = process_visual_geometry(&urdf_link.visual, &urdf_link.name, ctx)?;
 
-        // Process inertial properties
         let inertial_props = InertialProperties {
             origin: Pose::from(&urdf_link.inertial.origin),
             mass: urdf_link.inertial.mass.value as f32,
             inertia: InertiaMatrix::from(&urdf_link.inertial.inertia),
         };
 
-        // Process collision properties (supports multiple collision elements)
         let collisions = process_collision_geometry(&urdf_link.collision);
 
-        // Create Part if we have mesh data
         let part_id = if let Some(mut part) = part_opt {
-            // Update part with inertial properties from URDF
             part.mass = inertial_props.mass;
             part.inertia = inertial_props.inertia;
-
             let id = part.id;
             parts.insert(id, part);
             Some(id)
@@ -147,7 +176,6 @@ pub fn import_urdf(urdf_path: &Path, options: &ImportOptions) -> Result<Project,
             None
         };
 
-        // Create Link
         let link = Link {
             id: link_id,
             name: urdf_link.name.clone(),
@@ -161,17 +189,19 @@ pub fn import_urdf(urdf_path: &Path, options: &ImportOptions) -> Result<Project,
         links.insert(link_id, link);
     }
 
-    // Build Assembly (root links are determined automatically by get_root_links())
-    let mut assembly = Assembly::new(&robot.name);
-    assembly.links = links;
-    // Rebuild name indices
-    assembly.rebuild_indices();
+    Ok((parts, links, link_name_to_id))
+}
 
-    // Build joint name to ID mapping for mimic resolution
+/// Process URDF joints and add them to the assembly
+fn process_urdf_joints(
+    urdf_joints: &[urdf_rs::Joint],
+    link_name_to_id: &HashMap<String, Uuid>,
+    assembly: &mut Assembly,
+) -> Result<(), ImportError> {
     let mut joint_name_to_id: HashMap<String, Uuid> = HashMap::new();
 
     // First pass: create joints without mimic
-    for urdf_joint in &robot.joints {
+    for urdf_joint in urdf_joints {
         let parent_link_id = link_name_to_id
             .get(&urdf_joint.parent.link)
             .ok_or_else(|| ImportError::LinkNotFound(urdf_joint.parent.link.clone()))?;
@@ -202,14 +232,13 @@ pub fn import_urdf(urdf_path: &Path, options: &ImportOptions) -> Result<Project,
                 damping: d.damping as f32,
                 friction: d.friction as f32,
             }),
-            mimic: None, // Will be resolved in second pass
+            mimic: None,
         };
 
         let joint_id = joint.id;
         joint_name_to_id.insert(urdf_joint.name.clone(), joint_id);
         assembly.joints.insert(joint_id, joint);
 
-        // Update parent-child relationships
         assembly
             .children
             .entry(*parent_link_id)
@@ -221,7 +250,7 @@ pub fn import_urdf(urdf_path: &Path, options: &ImportOptions) -> Result<Project,
     }
 
     // Second pass: resolve mimic references
-    for urdf_joint in &robot.joints {
+    for urdf_joint in urdf_joints {
         if let Some(ref mimic) = urdf_joint.mimic
             && let Some(&mimic_joint_id) = joint_name_to_id.get(&mimic.joint)
             && let Some(&joint_id) = joint_name_to_id.get(&urdf_joint.name)
@@ -235,28 +264,18 @@ pub fn import_urdf(urdf_path: &Path, options: &ImportOptions) -> Result<Project,
         }
     }
 
-    // Rebuild indices after all joints are added
-    assembly.rebuild_indices();
+    Ok(())
+}
 
-    // Update world transforms
-    assembly.update_world_transforms();
-
-    // Apply link world transforms to parts
-    // Final transform = link.world_transform * visual_origin
+/// Apply link world transforms to parts
+fn apply_world_transforms_to_parts(assembly: &Assembly, parts: &mut HashMap<Uuid, Part>) {
     for link in assembly.links.values() {
         if let Some(part_id) = link.part_id
             && let Some(part) = parts.get_mut(&part_id)
         {
-            // part.origin_transform already contains visual origin
-            // Prepend link's world transform
             part.origin_transform = link.world_transform * part.origin_transform;
         }
     }
-
-    // Create project using constructor (parts is private)
-    let project = Project::with_parts(robot.name, parts, assembly, materials);
-
-    Ok(project)
 }
 
 #[cfg(test)]

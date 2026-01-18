@@ -60,11 +60,14 @@ pub fn vertex_buffer_layout<T>(
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct PositionColorVertex {
+    /// Vertex position in local space.
     pub position: [f32; 3],
+    /// Vertex color (RGB).
     pub color: [f32; 3],
 }
 
 impl PositionColorVertex {
+    /// Vertex attribute descriptors for the shader.
     pub const ATTRIBUTES: &'static [wgpu::VertexAttribute] = &[
         wgpu::VertexAttribute {
             offset: 0,
@@ -78,6 +81,7 @@ impl PositionColorVertex {
         },
     ];
 
+    /// Returns the vertex buffer layout for this vertex type.
     pub fn layout() -> wgpu::VertexBufferLayout<'static> {
         wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<Self>() as u64,
@@ -91,16 +95,19 @@ impl PositionColorVertex {
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct PositionVertex {
+    /// Vertex position in local space.
     pub position: [f32; 3],
 }
 
 impl PositionVertex {
+    /// Vertex attribute descriptors for the shader.
     pub const ATTRIBUTES: &'static [wgpu::VertexAttribute] = &[wgpu::VertexAttribute {
         offset: 0,
         shader_location: 0,
         format: wgpu::VertexFormat::Float32x3,
     }];
 
+    /// Returns the vertex buffer layout for this vertex type.
     pub fn layout() -> wgpu::VertexBufferLayout<'static> {
         wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<Self>() as u64,
@@ -143,12 +150,16 @@ pub fn mat4_instance_attributes(start_location: u32) -> [wgpu::VertexAttribute; 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct MeshVertex {
+    /// Vertex position in local space.
     pub position: [f32; 3],
+    /// Vertex normal vector.
     pub normal: [f32; 3],
+    /// Vertex color (RGBA).
     pub color: [f32; 4],
 }
 
 impl MeshVertex {
+    /// Vertex attribute descriptors for the shader.
     pub const ATTRIBUTES: &'static [wgpu::VertexAttribute] = &[
         wgpu::VertexAttribute {
             offset: 0,
@@ -167,6 +178,7 @@ impl MeshVertex {
         },
     ];
 
+    /// Returns the vertex buffer layout for this vertex type.
     pub fn layout() -> wgpu::VertexBufferLayout<'static> {
         wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<Self>() as u64,

@@ -13,8 +13,11 @@ use crate::vertex::{PositionColorVertex, mat4_instance_attributes};
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct AxisInstance {
+    /// Transformation matrix for this axis instance.
     pub transform: [[f32; 4]; 4],
+    /// Scale factor for the axis lines.
     pub scale: f32,
+    /// Padding for alignment.
     pub _pad: [f32; 3],
 }
 
@@ -38,6 +41,7 @@ pub struct AxisRenderer {
 }
 
 impl AxisRenderer {
+    /// Creates a new axis renderer.
     pub fn new(
         device: &wgpu::Device,
         format: wgpu::TextureFormat,
@@ -113,6 +117,7 @@ impl AxisRenderer {
         self.update_instances(queue, &[instance]);
     }
 
+    /// Renders all axis instances.
     pub fn render<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>) {
         if self.instances.is_empty() {
             return;

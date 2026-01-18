@@ -38,7 +38,9 @@ use crate::sub_renderers::{
 
 /// Mesh entry with bind group
 pub struct MeshEntry {
+    /// Mesh data including vertex/index buffers and instance data.
     pub data: MeshData,
+    /// Bind group for instance-specific uniforms.
     pub bind_group: wgpu::BindGroup,
 }
 
@@ -116,6 +118,7 @@ pub struct Renderer {
 }
 
 impl Renderer {
+    /// Creates a new renderer with the specified device and configuration.
     pub fn new(
         device: &wgpu::Device,
         format: wgpu::TextureFormat,
@@ -509,6 +512,7 @@ impl Renderer {
         })
     }
 
+    /// Resizes the renderer's textures for a new viewport size.
     pub fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) {
         if width == 0 || height == 0 {
             return;
@@ -530,6 +534,7 @@ impl Renderer {
         self.msaa_view = msaa_view;
     }
 
+    /// Returns the texture format used by the renderer.
     pub fn format(&self) -> wgpu::TextureFormat {
         self.format
     }

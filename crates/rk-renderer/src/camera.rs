@@ -7,9 +7,13 @@ use glam::{Mat4, Vec3};
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct CameraUniform {
+    /// Combined view-projection matrix.
     pub view_proj: [[f32; 4]; 4],
+    /// View matrix.
     pub view: [[f32; 4]; 4],
+    /// Projection matrix.
     pub proj: [[f32; 4]; 4],
+    /// Eye position in world space (w = 1.0).
     pub eye: [f32; 4],
 }
 
@@ -27,16 +31,25 @@ impl Default for CameraUniform {
 
 /// Orbit camera
 pub struct Camera {
+    /// Camera position in world space.
     pub position: Vec3,
+    /// Target point the camera looks at.
     pub target: Vec3,
+    /// Up vector.
     pub up: Vec3,
+    /// Field of view in radians.
     pub fov: f32,
+    /// Aspect ratio (width / height).
     pub aspect: f32,
+    /// Near clipping plane distance.
     pub near: f32,
+    /// Far clipping plane distance.
     pub far: f32,
-    // Orbit state
+    /// Yaw angle in radians (horizontal rotation).
     pub yaw: f32,
+    /// Pitch angle in radians (vertical rotation).
     pub pitch: f32,
+    /// Distance from target.
     pub distance: f32,
 }
 

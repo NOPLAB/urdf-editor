@@ -13,12 +13,16 @@ use crate::pipeline::create_camera_bind_group;
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct MeshVertex {
+    /// Vertex position in local space.
     pub position: [f32; 3],
+    /// Vertex normal vector.
     pub normal: [f32; 3],
+    /// Vertex color (RGBA).
     pub color: [f32; 4],
 }
 
 impl MeshVertex {
+    /// Vertex attribute descriptors for the shader.
     pub const ATTRIBUTES: &'static [wgpu::VertexAttribute] = &[
         wgpu::VertexAttribute {
             offset: 0,
@@ -37,6 +41,7 @@ impl MeshVertex {
         },
     ];
 
+    /// Returns the vertex buffer layout for this vertex type.
     pub fn layout() -> wgpu::VertexBufferLayout<'static> {
         wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<Self>() as u64,
@@ -50,9 +55,13 @@ impl MeshVertex {
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct MeshInstance {
+    /// Model transformation matrix.
     pub model: [[f32; 4]; 4],
+    /// Instance color (RGBA).
     pub color: [f32; 4],
+    /// Selection state (0 = unselected, 1 = selected).
     pub selected: u32,
+    /// Padding for alignment.
     pub _pad: [u32; 3],
 }
 
@@ -69,10 +78,15 @@ impl Default for MeshInstance {
 
 /// GPU mesh data
 pub struct MeshData {
+    /// Vertex buffer containing mesh geometry.
     pub vertex_buffer: wgpu::Buffer,
+    /// Index buffer for indexed drawing.
     pub index_buffer: wgpu::Buffer,
+    /// Number of indices.
     pub index_count: u32,
+    /// Instance data (transform, color, selection).
     pub instance: MeshInstance,
+    /// GPU buffer for instance data.
     pub instance_buffer: wgpu::Buffer,
 }
 
@@ -195,6 +209,7 @@ pub struct MeshRenderer {
 }
 
 impl MeshRenderer {
+    /// Creates a new mesh renderer with shadow mapping support.
     pub fn new(
         device: &wgpu::Device,
         format: wgpu::TextureFormat,

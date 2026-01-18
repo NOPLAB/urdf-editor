@@ -2,10 +2,21 @@
 
 use egui::Ui;
 use glam::Mat4;
-use rk_core::{CollisionElement, Part};
+use rk_core::{CollisionElement, Joint, Part};
 use uuid::Uuid;
 
 use crate::state::AppAction;
+
+/// Information about a child joint (for display in properties panel)
+#[derive(Debug, Clone)]
+pub struct ChildJointInfo {
+    /// Joint ID
+    pub joint_id: Uuid,
+    /// Joint data (cloned for display)
+    pub joint: Joint,
+    /// Child part name (for display)
+    pub child_part_name: String,
+}
 
 /// Context passed to property components for rendering
 pub struct PropertyContext<'a> {
@@ -19,6 +30,8 @@ pub struct PropertyContext<'a> {
     pub collisions: Vec<CollisionElement>,
     /// Currently selected collision index (if any)
     pub selected_collision_index: Option<usize>,
+    /// Joints connecting this part to its children
+    pub child_joints: Vec<ChildJointInfo>,
     /// Queue for actions to be processed
     pub pending_actions: &'a mut Vec<AppAction>,
 }

@@ -4,10 +4,11 @@ mod component;
 mod components;
 mod helpers;
 
-pub use component::{PropertyComponent, PropertyContext};
+pub use component::{ChildJointInfo, PropertyComponent, PropertyContext};
 
 use components::{
-    CollisionComponent, GeometryComponent, PhysicalComponent, TransformComponent, VisualComponent,
+    CollisionComponent, GeometryComponent, JointComponent, PhysicalComponent, TransformComponent,
+    VisualComponent,
 };
 
 use crate::config::SharedConfig;
@@ -21,6 +22,7 @@ pub struct PropertiesPanel {
     visual: VisualComponent,
     geometry: GeometryComponent,
     collision: CollisionComponent,
+    joint: JointComponent,
 }
 
 impl PropertiesPanel {
@@ -31,6 +33,7 @@ impl PropertiesPanel {
             visual: VisualComponent::new(),
             geometry: GeometryComponent::new(),
             collision: CollisionComponent::new(),
+            joint: JointComponent::new(),
         }
     }
 }
@@ -71,7 +74,7 @@ impl Panel for PropertiesPanel {
         };
 
         // Find link info for this part
-        let (link_id, parent_world_transform, collisions) = state
+        let (link_id, parent_world_transform, collisions, child_joints) = state
             .project
             .assembly
             .find_link_by_part(selected_id)
@@ -81,9 +84,35 @@ impl Panel for PropertiesPanel {
                     .assembly
                     .get_parent_link(link.id)
                     .map(|parent| parent.world_transform);
-                (Some(link.id), parent_transform, link.collisions.clone())
+
+                // Collect child joint info
+                let children = state.project.assembly.get_children(link.id);
+                let child_joints: Vec<ChildJointInfo> = children
+                    .iter()
+                    .filter_map(|(joint_id, child_link_id)| {
+                        let joint = state.project.assembly.get_joint(*joint_id)?.clone();
+                        let child_link = state.project.assembly.get_link(*child_link_id)?;
+                        let child_part_name = child_link
+                            .part_id
+                            .and_then(|pid| state.project.get_part(pid))
+                            .map(|p| p.name.clone())
+                            .unwrap_or_else(|| child_link.name.clone());
+                        Some(ChildJointInfo {
+                            joint_id: *joint_id,
+                            joint,
+                            child_part_name,
+                        })
+                    })
+                    .collect();
+
+                (
+                    Some(link.id),
+                    parent_transform,
+                    link.collisions.clone(),
+                    child_joints,
+                )
             })
-            .unwrap_or((None, None, Vec::new()));
+            .unwrap_or((None, None, Vec::new(), Vec::new()));
 
         // Get selected collision index if the link matches
         let selected_collision_index = state.selected_collision.and_then(|(sel_link_id, index)| {
@@ -120,6 +149,7 @@ impl Panel for PropertiesPanel {
             link_id,
             collisions,
             selected_collision_index,
+            child_joints,
             pending_actions: &mut pending_actions,
         };
 
@@ -130,6 +160,7 @@ impl Panel for PropertiesPanel {
         render_component(ui, &mut self.visual, &mut ctx);
         render_component(ui, &mut self.geometry, &mut ctx);
         render_component(ui, &mut self.collision, &mut ctx);
+        render_component(ui, &mut self.joint, &mut ctx);
 
         // If transform changed, update the renderer
         let new_transform = if transform_changed {

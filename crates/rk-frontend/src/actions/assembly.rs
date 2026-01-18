@@ -2,7 +2,8 @@
 
 use uuid::Uuid;
 
-use rk_core::{CollisionElement, GeometryType, Joint, Link, Pose};
+use glam::Vec3;
+use rk_core::{CollisionElement, GeometryType, Joint, JointLimits, JointType, Link, Pose};
 
 use crate::state::{AppAction, AppState};
 
@@ -35,6 +36,20 @@ pub fn handle_assembly_action(action: AppAction, ctx: &ActionContext) {
             index,
             geometry,
         } => handle_update_collision_geometry(link_id, index, geometry, ctx),
+        // Joint configuration actions
+        AppAction::UpdateJointType {
+            joint_id,
+            joint_type,
+        } => handle_update_joint_type(joint_id, joint_type, ctx),
+        AppAction::UpdateJointOrigin { joint_id, origin } => {
+            handle_update_joint_origin(joint_id, origin, ctx)
+        }
+        AppAction::UpdateJointAxis { joint_id, axis } => {
+            handle_update_joint_axis(joint_id, axis, ctx)
+        }
+        AppAction::UpdateJointLimits { joint_id, limits } => {
+            handle_update_joint_limits(joint_id, limits, ctx)
+        }
         _ => {}
     }
 }
@@ -399,5 +414,136 @@ fn handle_update_collision_geometry(
         }
     } else {
         tracing::warn!("Link {} not found for updating collision geometry", link_id);
+    }
+}
+
+// ========== Joint configuration action handlers ==========
+
+fn handle_update_joint_type(joint_id: Uuid, joint_type: JointType, ctx: &ActionContext) {
+    let mut state = ctx.app_state.lock();
+
+    if let Some(joint) = state.project.assembly.get_joint_mut(joint_id) {
+        let old_type = joint.joint_type;
+        joint.joint_type = joint_type;
+
+        // Add default limits when switching to a type that needs them
+        if joint_type.has_limits() && joint.limits.is_none() {
+            joint.limits = Some(if joint_type == JointType::Prismatic {
+                JointLimits::default_prismatic()
+            } else {
+                JointLimits::default_revolute()
+            });
+        }
+
+        // Clear limits when switching to a type that doesn't need them
+        if !joint_type.has_limits() {
+            joint.limits = None;
+        }
+
+        state.modified = true;
+        tracing::info!(
+            "Updated joint {} type: {:?} -> {:?}",
+            joint_id,
+            old_type,
+            joint_type
+        );
+
+        // Update world transforms
+        state
+            .project
+            .assembly
+            .update_world_transforms_with_current_positions();
+
+        // Update renderer transforms
+        sync_renderer_transforms(&state, ctx);
+    } else {
+        tracing::warn!("Joint {} not found for updating type", joint_id);
+    }
+}
+
+fn handle_update_joint_origin(joint_id: Uuid, origin: Pose, ctx: &ActionContext) {
+    let mut state = ctx.app_state.lock();
+
+    if let Some(joint) = state.project.assembly.get_joint_mut(joint_id) {
+        joint.origin = origin;
+        state.modified = true;
+        tracing::debug!("Updated joint {} origin", joint_id);
+
+        // Update world transforms
+        state
+            .project
+            .assembly
+            .update_world_transforms_with_current_positions();
+
+        // Update renderer transforms
+        sync_renderer_transforms(&state, ctx);
+    } else {
+        tracing::warn!("Joint {} not found for updating origin", joint_id);
+    }
+}
+
+fn handle_update_joint_axis(joint_id: Uuid, axis: Vec3, ctx: &ActionContext) {
+    let mut state = ctx.app_state.lock();
+
+    let found = if let Some(joint) = state.project.assembly.get_joint_mut(joint_id) {
+        joint.axis = axis.normalize();
+        state.modified = true;
+        tracing::debug!("Updated joint {} axis", joint_id);
+        true
+    } else {
+        false
+    };
+
+    if found {
+        // Update world transforms
+        state
+            .project
+            .assembly
+            .update_world_transforms_with_current_positions();
+
+        // Update renderer transforms
+        sync_renderer_transforms(&state, ctx);
+    } else {
+        tracing::warn!("Joint {} not found for updating axis", joint_id);
+    }
+}
+
+fn handle_update_joint_limits(joint_id: Uuid, limits: Option<JointLimits>, ctx: &ActionContext) {
+    let mut state = ctx.app_state.lock();
+
+    // Update the joint limits
+    let updated = {
+        if let Some(joint) = state.project.assembly.get_joint_mut(joint_id) {
+            joint.limits = limits;
+            tracing::debug!("Updated joint {} limits", joint_id);
+            true
+        } else {
+            tracing::warn!("Joint {} not found for updating limits", joint_id);
+            false
+        }
+    };
+
+    if !updated {
+        return;
+    }
+
+    state.modified = true;
+
+    // Clamp current joint position to new limits if necessary
+    if let Some(limits) = limits {
+        let current_pos = state.project.assembly.get_joint_position(joint_id);
+        let clamped = current_pos.clamp(limits.lower, limits.upper);
+        if clamped != current_pos {
+            state.project.assembly.set_joint_position(joint_id, clamped);
+
+            // Update world transforms
+            state
+                .project
+                .assembly
+                .update_world_transforms_with_current_positions();
+
+            // Update renderer transforms
+            sync_renderer_transforms(&state, ctx);
+        }
     }
 }

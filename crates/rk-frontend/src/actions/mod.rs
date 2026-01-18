@@ -97,7 +97,11 @@ pub fn dispatch_action(action: AppAction, ctx: &ActionContext) {
         | AppAction::DisconnectPart { .. }
         | AppAction::UpdateJointPosition { .. }
         | AppAction::ResetJointPosition { .. }
-        | AppAction::ResetAllJointPositions => {
+        | AppAction::ResetAllJointPositions
+        | AppAction::UpdateJointType { .. }
+        | AppAction::UpdateJointOrigin { .. }
+        | AppAction::UpdateJointAxis { .. }
+        | AppAction::UpdateJointLimits { .. } => {
             handle_assembly_action(action, ctx);
         }
 

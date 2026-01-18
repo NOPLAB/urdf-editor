@@ -16,7 +16,7 @@ use glam::Mat4;
 use parking_lot::Mutex;
 use uuid::Uuid;
 
-use rk_core::{GeometryType, Part, Pose, Project, StlUnit};
+use rk_core::{GeometryType, JointLimits, JointType, Part, Pose, Project, StlUnit};
 
 /// Actions that can be performed on the app state
 #[derive(Debug, Clone)]
@@ -69,6 +69,22 @@ pub enum AppAction {
     ResetJointPosition { joint_id: Uuid },
     /// Reset all joint positions to 0
     ResetAllJointPositions,
+
+    // Joint configuration actions
+    /// Update joint type
+    UpdateJointType {
+        joint_id: Uuid,
+        joint_type: JointType,
+    },
+    /// Update joint origin (position/rotation relative to parent)
+    UpdateJointOrigin { joint_id: Uuid, origin: Pose },
+    /// Update joint axis (for revolute/prismatic/continuous)
+    UpdateJointAxis { joint_id: Uuid, axis: glam::Vec3 },
+    /// Update joint limits
+    UpdateJointLimits {
+        joint_id: Uuid,
+        limits: Option<JointLimits>,
+    },
 
     // Collision actions
     /// Select a collision element (link_id, collision_index)

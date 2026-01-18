@@ -4,16 +4,18 @@ mod camera_overlay;
 
 use glam::{Vec2, Vec3};
 use rk_cad::{Sketch, SketchEntity};
-use rk_renderer::{GizmoAxis, GizmoMode, GizmoSpace, SketchRenderData};
+use rk_renderer::{Camera, GizmoAxis, GizmoMode, GizmoSpace, SketchRenderData, plane_ids};
 
 use crate::config::SharedConfig;
 use crate::panels::Panel;
 use crate::state::{
-    AppAction, GizmoTransform, PickablePartData, SharedAppState, SharedViewportState, pick_object,
+    AppAction, GizmoTransform, PickablePartData, ReferencePlane, SharedAppState,
+    SharedViewportState, SketchAction, pick_object,
 };
 
 use camera_overlay::{
-    render_axes_indicator, render_camera_settings, render_gizmo_toggle, render_sketch_toolbar,
+    render_axes_indicator, render_camera_settings, render_gizmo_toggle,
+    render_plane_selection_hint, render_sketch_toolbar,
 };
 
 /// Colors for sketch rendering
@@ -123,11 +125,87 @@ fn sketch_to_render_data(
     render_data
 }
 
+/// Size of the reference planes for picking
+const PLANE_SIZE: f32 = 2.0;
+
+/// Pick a reference plane from screen coordinates.
+///
+/// Returns the closest plane that the ray intersects within the plane bounds,
+/// or None if no plane is hit.
+pub fn pick_reference_plane(
+    camera: &Camera,
+    screen_x: f32,
+    screen_y: f32,
+    width: f32,
+    height: f32,
+) -> Option<ReferencePlane> {
+    let (ray_origin, ray_dir) = camera.screen_to_ray(screen_x, screen_y, width, height);
+
+    let mut closest: Option<(ReferencePlane, f32)> = None;
+
+    for plane in ReferencePlane::all() {
+        if let Some(t) = ray_plane_intersection(ray_origin, ray_dir, plane) {
+            // Check if the intersection point is within the plane bounds
+            let hit_point = ray_origin + ray_dir * t;
+
+            if is_point_in_plane_bounds(hit_point, plane, PLANE_SIZE) {
+                // Check if this is closer than any previous hit
+                if closest.is_none() || t < closest.unwrap().1 {
+                    closest = Some((plane, t));
+                }
+            }
+        }
+    }
+
+    closest.map(|(p, _)| p)
+}
+
+/// Calculate ray-plane intersection.
+///
+/// Returns the parameter t such that ray_origin + ray_dir * t is on the plane,
+/// or None if the ray is parallel to the plane.
+fn ray_plane_intersection(ray_origin: Vec3, ray_dir: Vec3, plane: ReferencePlane) -> Option<f32> {
+    let normal = plane.normal();
+    let denom = ray_dir.dot(normal);
+
+    // Check if ray is parallel to plane
+    if denom.abs() < 1e-6 {
+        return None;
+    }
+
+    // Plane passes through origin, so d = 0
+    let t = -ray_origin.dot(normal) / denom;
+
+    // Only return positive t (intersection in front of camera)
+    if t > 0.0 { Some(t) } else { None }
+}
+
+/// Check if a point is within the bounds of a reference plane.
+fn is_point_in_plane_bounds(point: Vec3, plane: ReferencePlane, size: f32) -> bool {
+    match plane {
+        ReferencePlane::XY => point.x.abs() <= size && point.y.abs() <= size,
+        ReferencePlane::XZ => point.x.abs() <= size && point.z.abs() <= size,
+        ReferencePlane::YZ => point.y.abs() <= size && point.z.abs() <= size,
+    }
+}
+
+/// Convert ReferencePlane to plane_ids for the renderer.
+fn reference_plane_to_id(plane: Option<ReferencePlane>) -> u32 {
+    match plane {
+        None => plane_ids::NONE,
+        Some(ReferencePlane::XY) => plane_ids::XY,
+        Some(ReferencePlane::XZ) => plane_ids::XZ,
+        Some(ReferencePlane::YZ) => plane_ids::YZ,
+    }
+}
+
 /// 3D viewport panel
 pub struct ViewportPanel {
     last_size: egui::Vec2,
     hovered_axis: GizmoAxis,
     show_camera_settings: bool,
+    /// Gizmo toolbar collapsed state
+    gizmo_collapsed: bool,
 }
 
 impl ViewportPanel {
@@ -136,6 +214,7 @@ impl ViewportPanel {
             last_size: egui::Vec2::ZERO,
             hovered_axis: GizmoAxis::None,
             show_camera_settings: false,
+            gizmo_collapsed: false,
         }
     }
 }
@@ -233,6 +312,17 @@ impl Panel for ViewportPanel {
             let mut egui_renderer = render_state.renderer.write();
             let tex_id = vp_state.ensure_texture(width, height, &mut egui_renderer);
 
+            // Check if we're in plane selection mode
+            let is_plane_selection_mode = {
+                let app = app_state.lock();
+                app.cad.editor_mode.is_plane_selection()
+            };
+
+            // Enable/disable plane selector based on editor mode
+            vp_state
+                .renderer
+                .set_plane_selector_visible(is_plane_selection_mode);
+
             // Update sketch data for rendering
             let sketch_render_data: Vec<SketchRenderData> = {
                 let app = app_state.lock();
@@ -283,6 +373,38 @@ impl Panel for ViewportPanel {
 
         // Handle camera input
         let mut vp_state = viewport_state.lock();
+
+        // Check if in plane selection mode
+        let is_plane_selection = {
+            let app = app_state.lock();
+            app.cad.editor_mode.is_plane_selection()
+        };
+
+        // Handle plane selection mode
+        if is_plane_selection && let Some(pos) = local_mouse {
+            // Pick plane under cursor
+            let camera = vp_state.renderer.camera();
+            let hovered_plane =
+                pick_reference_plane(camera, pos.x, pos.y, available_size.x, available_size.y);
+
+            // Update highlight
+            let plane_id = reference_plane_to_id(hovered_plane);
+            let queue = vp_state.queue.clone();
+            vp_state
+                .renderer
+                .set_plane_selector_highlighted(&queue, plane_id);
+
+            // Handle click to select plane
+            if response.clicked_by(egui::PointerButton::Primary)
+                && let Some(plane) = hovered_plane
+            {
+                drop(vp_state);
+                app_state.lock().queue_action(AppAction::SketchAction(
+                    SketchAction::SelectPlaneAndCreateSketch { plane },
+                ));
+                vp_state = viewport_state.lock();
+            }
+        }
 
         // Gizmo interaction (left mouse button)
         let mut gizmo_delta: Option<GizmoTransform> = None;
@@ -607,8 +729,8 @@ impl Panel for ViewportPanel {
         // Draw axes indicator overlay
         render_axes_indicator(ui, response.rect, yaw, pitch);
 
-        // Draw gizmo mode toggle overlay (top-left)
-        render_gizmo_toggle(ui, response.rect, viewport_state);
+        // Draw gizmo mode toggle overlay (top-left) with slide animation
+        render_gizmo_toggle(ui, response.rect, viewport_state, &mut self.gizmo_collapsed);
 
         // Draw camera settings overlay (top-right, Unity-style)
         render_camera_settings(
@@ -625,6 +747,15 @@ impl Panel for ViewportPanel {
                 let current_tool = sketch_state.current_tool;
                 drop(app); // Release lock before calling render
                 render_sketch_toolbar(ui, response.rect, app_state, current_tool);
+            }
+        }
+
+        // Draw plane selection hint when in plane selection mode
+        {
+            let app = app_state.lock();
+            if app.cad.editor_mode.is_plane_selection() {
+                drop(app);
+                render_plane_selection_hint(ui, response.rect);
             }
         }
 

@@ -5,6 +5,7 @@
 //! ## New Architecture (SubRenderer trait)
 //! - [`GridSubRenderer`]: Grid sub-renderer implementing the new trait
 //! - [`SketchRenderer`]: 2D sketch visualization on 3D planes
+//! - [`PlaneSelectorRenderer`]: Reference plane selection for sketch creation
 //!
 //! ## Legacy Renderers (being migrated)
 //! - [`grid_legacy::GridRenderer`]: Legacy grid implementation
@@ -16,6 +17,7 @@
 
 // New trait-based implementations
 mod grid;
+pub mod plane_selector;
 pub mod sketch;
 
 // Legacy implementations (to be migrated to SubRenderer trait)
@@ -28,6 +30,7 @@ pub mod mesh;
 
 // Re-exports for new architecture
 pub use grid::GridSubRenderer;
+pub use plane_selector::{PlaneSelectorRenderer, PlaneSelectorVertex, plane_ids};
 pub use sketch::{SketchRenderData, SketchRenderer, SketchVertex};
 
 // Re-exports for legacy code

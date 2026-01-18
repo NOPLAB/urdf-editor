@@ -4,7 +4,7 @@
 
 use tracing::info;
 
-use crate::state::{AppAction, SketchAction};
+use crate::state::{AppAction, EditorMode, PlaneSelectionState, ReferencePlane, SketchAction};
 
 use super::ActionContext;
 
@@ -16,6 +16,46 @@ pub fn handle_sketch_action(action: AppAction, ctx: &ActionContext) {
     };
 
     match sketch_action {
+        SketchAction::BeginPlaneSelection => {
+            let mut state = ctx.app_state.lock();
+            state.cad.editor_mode = EditorMode::PlaneSelection(PlaneSelectionState::default());
+            info!("Entered plane selection mode");
+        }
+
+        SketchAction::CancelPlaneSelection => {
+            let mut state = ctx.app_state.lock();
+            state.cad.editor_mode = EditorMode::Assembly;
+            info!("Cancelled plane selection");
+        }
+
+        SketchAction::SetHoveredPlane { plane } => {
+            let mut state = ctx.app_state.lock();
+            if let Some(plane_state) = state.cad.editor_mode.plane_selection_mut() {
+                plane_state.hovered_plane = plane;
+            }
+        }
+
+        SketchAction::SelectPlaneAndCreateSketch { plane } => {
+            // 1. Move camera to the appropriate view
+            if let Some(viewport_state) = ctx.viewport_state.as_ref() {
+                let mut vp = viewport_state.lock();
+                match plane {
+                    ReferencePlane::XY => vp.renderer.camera_mut().set_top_view(),
+                    ReferencePlane::XZ => vp.renderer.camera_mut().set_front_view(),
+                    ReferencePlane::YZ => vp.renderer.camera_mut().set_side_view(),
+                }
+            }
+
+            // 2. Create the sketch on the selected plane
+            let sketch_plane = plane.to_sketch_plane();
+            let mut state = ctx.app_state.lock();
+            let sketch_id = state.cad.create_sketch("Sketch", sketch_plane);
+            info!("Created sketch on {} plane: {}", plane.name(), sketch_id);
+
+            // 3. Enter sketch mode
+            state.cad.enter_sketch_mode(sketch_id);
+        }
+
         SketchAction::CreateSketch { plane } => {
             let mut state = ctx.app_state.lock();
             let sketch_id = state.cad.create_sketch("Sketch", plane);

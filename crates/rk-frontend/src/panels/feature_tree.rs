@@ -6,8 +6,6 @@
 use egui::{CollapsingHeader, Ui};
 use uuid::Uuid;
 
-use rk_cad::SketchPlane;
-
 use crate::panels::Panel;
 use crate::state::{AppAction, SharedAppState, SketchAction};
 
@@ -65,7 +63,14 @@ impl Panel for FeatureTreePanel {
 
     fn ui(&mut self, ui: &mut Ui, app_state: &SharedAppState) {
         // Collect data from state
-        let (has_sketches, is_sketch_mode, active_sketch, sketches, features) = {
+        let (
+            has_sketches,
+            is_sketch_mode,
+            is_plane_selection_mode,
+            active_sketch,
+            sketches,
+            features,
+        ) = {
             let state = app_state.lock();
             let cad = &state.cad;
 
@@ -96,11 +101,13 @@ impl Panel for FeatureTreePanel {
 
             let has_sketches = !sketches.is_empty();
             let is_sketch_mode = cad.is_sketch_mode();
+            let is_plane_selection_mode = cad.editor_mode.is_plane_selection();
             let active_sketch = cad.editor_mode.sketch().map(|s| s.active_sketch);
 
             (
                 has_sketches,
                 is_sketch_mode,
+                is_plane_selection_mode,
                 active_sketch,
                 sketches,
                 features,
@@ -109,17 +116,16 @@ impl Panel for FeatureTreePanel {
 
         // Toolbar
         ui.horizontal(|ui| {
-            // New sketch button
-            if ui
-                .button("+ Sketch")
-                .on_hover_text("Create new sketch")
-                .clicked()
+            // New sketch button - starts plane selection mode
+            if !is_plane_selection_mode
+                && ui
+                    .button("+ Sketch")
+                    .on_hover_text("Create new sketch on a reference plane")
+                    .clicked()
             {
-                app_state.lock().queue_action(AppAction::SketchAction(
-                    SketchAction::CreateSketch {
-                        plane: SketchPlane::xy(),
-                    },
-                ));
+                app_state
+                    .lock()
+                    .queue_action(AppAction::SketchAction(SketchAction::BeginPlaneSelection));
             }
 
             ui.separator();
@@ -135,6 +141,21 @@ impl Panel for FeatureTreePanel {
                 }
             });
         });
+
+        // Plane selection mode indicator and cancel button
+        if is_plane_selection_mode {
+            ui.separator();
+            ui.colored_label(
+                egui::Color32::from_rgb(77, 180, 255),
+                "Selecting reference plane...",
+            );
+            ui.label("Click on a plane in the viewport to create a sketch.");
+            if ui.button("Cancel").clicked() {
+                app_state
+                    .lock()
+                    .queue_action(AppAction::SketchAction(SketchAction::CancelPlaneSelection));
+            }
+        }
 
         ui.separator();
 

@@ -33,8 +33,8 @@ use crate::resources::MeshManager;
 use crate::scene::Scene;
 use crate::sub_renderers::{
     AxisInstance, AxisRenderer, CollisionRenderer, GizmoAxis, GizmoMode, GizmoRenderer, GizmoSpace,
-    GridRenderer, MarkerInstance, MarkerRenderer, MeshData, MeshRenderer, SketchRenderData,
-    SketchRenderer,
+    GridRenderer, MarkerInstance, MarkerRenderer, MeshData, MeshRenderer, PlaneSelectorRenderer,
+    SketchRenderData, SketchRenderer,
 };
 
 /// Mesh entry with bind group
@@ -100,6 +100,7 @@ pub struct Renderer {
     gizmo_renderer: GizmoRenderer,
     collision_renderer: CollisionRenderer,
     sketch_renderer: SketchRenderer,
+    plane_selector_renderer: PlaneSelectorRenderer,
 
     // Data - UUID-keyed storage for O(1) lookup and removal
     meshes: HashMap<Uuid, MeshEntry>,
@@ -265,6 +266,14 @@ impl Renderer {
             &camera_buffer,
         );
 
+        let plane_selector_renderer = PlaneSelectorRenderer::new(
+            device,
+            format,
+            depth_format,
+            &camera_bind_group_layout,
+            &camera_buffer,
+        );
+
         // Initialize new architectural components
         let scene = Scene::new();
         let mesh_manager = MeshManager::new();
@@ -301,6 +310,7 @@ impl Renderer {
             gizmo_renderer,
             collision_renderer,
             sketch_renderer,
+            plane_selector_renderer,
             meshes: HashMap::new(),
             selected_part: None,
             show_grid: true,
@@ -771,6 +781,39 @@ impl Renderer {
         self.sketch_renderer.prepare_with_device(device);
     }
 
+    // ========== Plane selector renderer methods ==========
+
+    /// Get mutable reference to plane selector renderer
+    pub fn plane_selector_renderer_mut(&mut self) -> &mut PlaneSelectorRenderer {
+        &mut self.plane_selector_renderer
+    }
+
+    /// Get reference to plane selector renderer
+    pub fn plane_selector_renderer(&self) -> &PlaneSelectorRenderer {
+        &self.plane_selector_renderer
+    }
+
+    /// Set plane selector visibility
+    pub fn set_plane_selector_visible(&mut self, visible: bool) {
+        self.plane_selector_renderer.set_visible(visible);
+    }
+
+    /// Get plane selector visibility
+    pub fn plane_selector_visible(&self) -> bool {
+        self.plane_selector_renderer.is_visible()
+    }
+
+    /// Set plane selector highlighted plane
+    pub fn set_plane_selector_highlighted(&mut self, queue: &wgpu::Queue, plane_id: u32) {
+        self.plane_selector_renderer
+            .set_highlighted(queue, plane_id);
+    }
+
+    /// Get plane selector highlighted plane ID
+    pub fn plane_selector_highlighted(&self) -> u32 {
+        self.plane_selector_renderer.highlighted()
+    }
+
     /// Render the scene.
     pub fn render(
         &self,
@@ -886,6 +929,9 @@ impl Renderer {
 
         // Render collision shapes (semi-transparent, after markers)
         self.collision_renderer.render(&mut render_pass);
+
+        // Render plane selector (semi-transparent, for sketch plane selection)
+        self.plane_selector_renderer.render(&mut render_pass);
 
         // Render sketches
         self.sketch_renderer.render_pass(&mut render_pass);

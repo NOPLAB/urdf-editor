@@ -137,27 +137,103 @@ pub fn render_camera_settings(
         });
 }
 
-/// Render gizmo mode toggle in the top-left corner (floating UI)
+/// Render gizmo mode toggle in the top-left corner (floating UI) with slide animation
+/// Returns true if the collapsed state was toggled
 pub fn render_gizmo_toggle(
     ui: &mut egui::Ui,
     rect: egui::Rect,
     viewport_state: &SharedViewportState,
-) {
+    collapsed: &mut bool,
+) -> bool {
     let panel_margin = 10.0;
 
-    // Toggle buttons at top-left
-    let toggle_pos = egui::pos2(rect.left() + panel_margin, rect.top() + panel_margin);
+    // Animate the slide
+    let anim_id = egui::Id::new("gizmo_toolbar_anim");
+    let anim_value = ui.ctx().animate_bool_with_time(anim_id, *collapsed, 0.2);
+
+    let mut toggled = false;
+
+    // When fully collapsed, show only the expand arrow button
+    if anim_value > 0.99 {
+        let arrow_pos = egui::pos2(rect.left() + panel_margin, rect.top() + panel_margin);
+
+        egui::Area::new(egui::Id::new("gizmo_expand_btn"))
+            .fixed_pos(arrow_pos)
+            .order(egui::Order::Foreground)
+            .show(ui.ctx(), |ui| {
+                egui::Frame::popup(ui.style())
+                    .fill(egui::Color32::from_rgba_unmultiplied(30, 30, 30, 220))
+                    .corner_radius(4.0)
+                    .stroke(egui::Stroke::new(1.0, egui::Color32::from_gray(60)))
+                    .inner_margin(2.0)
+                    .show(ui, |ui| {
+                        // Expand button (right arrow)
+                        let button_size = egui::vec2(16.0, 24.0);
+                        let (response, painter) =
+                            ui.allocate_painter(button_size, egui::Sense::click());
+
+                        if response.hovered() {
+                            painter.rect_filled(
+                                response.rect,
+                                2.0,
+                                egui::Color32::from_rgba_unmultiplied(60, 60, 60, 200),
+                            );
+                        }
+
+                        let center = response.rect.center();
+                        let arrow_height = 6.0;
+                        let arrow_width = 4.0;
+
+                        // Right pointing arrow
+                        let tip = egui::pos2(center.x + arrow_width, center.y);
+                        let top = egui::pos2(center.x - arrow_width, center.y - arrow_height);
+                        let bottom = egui::pos2(center.x - arrow_width, center.y + arrow_height);
+
+                        let arrow_color = if response.hovered() {
+                            egui::Color32::WHITE
+                        } else {
+                            egui::Color32::from_gray(160)
+                        };
+
+                        painter.line_segment([top, tip], egui::Stroke::new(1.5, arrow_color));
+                        painter.line_segment([tip, bottom], egui::Stroke::new(1.5, arrow_color));
+
+                        if response.clicked() {
+                            *collapsed = false;
+                            toggled = true;
+                        }
+
+                        response.on_hover_text("Show gizmo tools");
+                    });
+            });
+
+        return toggled;
+    }
+
+    // When expanded or animating, show the full toolbar
+    let toolbar_width = 170.0; // Full toolbar width including arrow
+    let slide_offset = anim_value * (toolbar_width + panel_margin);
+    let toggle_pos = egui::pos2(
+        rect.left() + panel_margin - slide_offset,
+        rect.top() + panel_margin,
+    );
 
     egui::Area::new(egui::Id::new("gizmo_toggle"))
         .fixed_pos(toggle_pos)
         .order(egui::Order::Foreground)
+        .constrain_to(rect) // Constrain to viewport rect
         .show(ui.ctx(), |ui| {
+            // Set clip rect to viewport bounds
+            ui.set_clip_rect(rect);
+
             egui::Frame::popup(ui.style())
                 .fill(egui::Color32::from_rgba_unmultiplied(30, 30, 30, 220))
                 .corner_radius(4.0)
                 .stroke(egui::Stroke::new(1.0, egui::Color32::from_gray(60)))
                 .inner_margin(2.0)
                 .show(ui, |ui| {
+                    ui.set_clip_rect(rect);
+
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 2.0;
 
@@ -203,6 +279,140 @@ pub fn render_gizmo_toggle(
                             let queue = vp.queue.clone();
                             vp.renderer.set_gizmo_space(&queue, next_space);
                         }
+
+                        drop(vp);
+
+                        // Separator before collapse button
+                        ui.add_space(4.0);
+                        ui.separator();
+                        ui.add_space(2.0);
+
+                        // Collapse/expand toggle button (thin arrow)
+                        let button_size = egui::vec2(16.0, 24.0);
+                        let (response, painter) =
+                            ui.allocate_painter(button_size, egui::Sense::click());
+
+                        // Button background on hover
+                        if response.hovered() {
+                            painter.rect_filled(
+                                response.rect,
+                                2.0,
+                                egui::Color32::from_rgba_unmultiplied(60, 60, 60, 200),
+                            );
+                        }
+
+                        // Draw arrow
+                        let center = response.rect.center();
+                        let arrow_height = 6.0;
+                        let arrow_width = 4.0;
+
+                        // Arrow direction: left when expanded (to collapse)
+                        let tip = egui::pos2(center.x - arrow_width, center.y);
+                        let top = egui::pos2(center.x + arrow_width, center.y - arrow_height);
+                        let bottom = egui::pos2(center.x + arrow_width, center.y + arrow_height);
+
+                        let arrow_color = if response.hovered() {
+                            egui::Color32::WHITE
+                        } else {
+                            egui::Color32::from_gray(160)
+                        };
+
+                        // Draw thin arrow (just lines, not filled)
+                        painter.line_segment([top, tip], egui::Stroke::new(1.5, arrow_color));
+                        painter.line_segment([tip, bottom], egui::Stroke::new(1.5, arrow_color));
+
+                        if response.clicked() {
+                            *collapsed = true;
+                            toggled = true;
+                        }
+
+                        response.on_hover_text("Hide gizmo tools");
+                    });
+                });
+        });
+
+    toggled
+}
+
+/// Render plane selection hint at the top-center of the viewport
+pub fn render_plane_selection_hint(ui: &mut egui::Ui, rect: egui::Rect) {
+    let panel_margin = 10.0;
+    let panel_width = 320.0;
+
+    // Position at top-center
+    let hint_pos = egui::pos2(
+        rect.center().x - panel_width / 2.0,
+        rect.top() + panel_margin,
+    );
+
+    egui::Area::new(egui::Id::new("plane_selection_hint"))
+        .fixed_pos(hint_pos)
+        .order(egui::Order::Foreground)
+        .show(ui.ctx(), |ui| {
+            egui::Frame::popup(ui.style())
+                .fill(egui::Color32::from_rgba_unmultiplied(30, 30, 30, 240))
+                .corner_radius(6.0)
+                .stroke(egui::Stroke::new(1.0, egui::Color32::from_gray(80)))
+                .inner_margin(12.0)
+                .show(ui, |ui| {
+                    ui.set_width(panel_width - 24.0);
+
+                    ui.vertical_centered(|ui| {
+                        ui.label(
+                            egui::RichText::new("Select a Reference Plane")
+                                .size(14.0)
+                                .strong(),
+                        );
+                        ui.add_space(8.0);
+                        ui.label("Click on a plane to create a sketch:");
+                        ui.add_space(8.0);
+
+                        // Color legend
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 16.0;
+
+                            // XY plane (blue)
+                            ui.horizontal(|ui| {
+                                let (rect, _) = ui.allocate_exact_size(
+                                    egui::vec2(16.0, 16.0),
+                                    egui::Sense::hover(),
+                                );
+                                ui.painter().rect_filled(
+                                    rect,
+                                    2.0,
+                                    egui::Color32::from_rgb(77, 128, 230),
+                                );
+                                ui.label("XY (Top)");
+                            });
+
+                            // XZ plane (green)
+                            ui.horizontal(|ui| {
+                                let (rect, _) = ui.allocate_exact_size(
+                                    egui::vec2(16.0, 16.0),
+                                    egui::Sense::hover(),
+                                );
+                                ui.painter().rect_filled(
+                                    rect,
+                                    2.0,
+                                    egui::Color32::from_rgb(77, 230, 128),
+                                );
+                                ui.label("XZ (Front)");
+                            });
+
+                            // YZ plane (red)
+                            ui.horizontal(|ui| {
+                                let (rect, _) = ui.allocate_exact_size(
+                                    egui::vec2(16.0, 16.0),
+                                    egui::Sense::hover(),
+                                );
+                                ui.painter().rect_filled(
+                                    rect,
+                                    2.0,
+                                    egui::Color32::from_rgb(230, 128, 77),
+                                );
+                                ui.label("YZ (Side)");
+                            });
+                        });
                     });
                 });
         });

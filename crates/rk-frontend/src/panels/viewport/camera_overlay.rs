@@ -81,7 +81,7 @@ pub fn render_camera_settings(
 
     // Toggle button at top-right
     let toggle_pos = egui::pos2(
-        rect.right() - panel_margin - 42.0, // Adjust for collapse button
+        rect.right() - panel_margin - 50.0, // Adjust for collapse button
         rect.top() + panel_margin,
     );
 

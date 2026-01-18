@@ -3,12 +3,13 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::assembly::{CollisionElement, Pose, VisualElement};
+use crate::assembly::{CollisionElement, VisualElement};
 use crate::inertia::InertiaMatrix;
 use crate::mesh::{MeshFormat, load_mesh};
 use crate::part::Part;
 use crate::primitive::{generate_box_mesh, generate_cylinder_mesh, generate_sphere_mesh};
 use crate::types::GeometryType;
+use crate::types::Pose;
 
 use super::ImportError;
 use super::options::ImportOptions;

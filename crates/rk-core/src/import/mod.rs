@@ -11,11 +11,11 @@ use std::path::{Path, PathBuf};
 use glam::Vec3;
 use uuid::Uuid;
 
-use crate::assembly::{Assembly, InertialProperties, Joint, JointDynamics, JointMimic, Link, Pose};
+use crate::assembly::{Assembly, InertialProperties, Joint, Link};
 use crate::inertia::InertiaMatrix;
 use crate::part::Part;
 use crate::project::{MaterialDef, Project};
-use crate::types::{JointLimits, JointType};
+use crate::types::{JointDynamics, JointLimits, JointMimic, JointType, Pose};
 
 pub use geometry::{
     GeometryContext, create_part_from_mesh, process_collision_geometry, process_geometry,
@@ -281,8 +281,8 @@ fn apply_world_transforms_to_parts(assembly: &Assembly, parts: &mut HashMap<Uuid
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::assembly::Pose;
     use crate::types::JointType;
+    use crate::types::Pose;
 
     #[test]
     fn test_pose_from() {

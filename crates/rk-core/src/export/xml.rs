@@ -4,9 +4,9 @@ use std::collections::{HashMap, HashSet};
 
 use uuid::Uuid;
 
-use crate::assembly::{Assembly, Joint, Link, Pose};
+use crate::assembly::{Assembly, Joint, Link};
 use crate::part::Part;
-use crate::types::JointType;
+use crate::types::{JointType, Pose};
 
 use super::ExportError;
 

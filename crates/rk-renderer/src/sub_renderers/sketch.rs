@@ -6,6 +6,7 @@
 use glam::{Mat4, Vec2, Vec3, Vec4};
 use std::collections::HashMap;
 use uuid::Uuid;
+use wgpu::util::DeviceExt;
 
 use crate::context::RenderContext;
 use crate::pipeline::PipelineConfig;
@@ -229,7 +230,7 @@ impl Default for SketchRenderer {
 }
 
 impl SketchRenderer {
-    /// Create a new sketch renderer.
+    /// Create a new sketch renderer (uninitialized).
     pub fn new() -> Self {
         Self {
             enabled: true,
@@ -241,6 +242,79 @@ impl SketchRenderer {
             sketch_resources: HashMap::new(),
             pending_sketches: Vec::new(),
         }
+    }
+
+    /// Initialize the sketch renderer with GPU resources.
+    ///
+    /// This follows the same pattern as other sub-renderers (GridRenderer, etc.)
+    pub fn init(
+        &mut self,
+        device: &wgpu::Device,
+        format: wgpu::TextureFormat,
+        depth_format: wgpu::TextureFormat,
+        camera_bind_group_layout: &wgpu::BindGroupLayout,
+        camera_buffer: &wgpu::Buffer,
+    ) {
+        // Create sketch uniform bind group layout
+        let sketch_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Sketch Bind Group Layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+
+        // Create line pipeline
+        let line_pipeline = PipelineConfig::new(
+            "Sketch Lines",
+            include_str!("../shaders/sketch.wgsl"),
+            format,
+            depth_format,
+            &[camera_bind_group_layout, &sketch_bind_group_layout],
+        )
+        .with_vertex_layouts(vec![SketchVertex::layout()])
+        .with_topology(wgpu::PrimitiveTopology::LineList)
+        .with_blend(wgpu::BlendState::ALPHA_BLENDING)
+        .with_depth_write(false)
+        .build(device);
+
+        // Create point pipeline (using same shader but different topology)
+        let point_pipeline = PipelineConfig::new(
+            "Sketch Points",
+            include_str!("../shaders/sketch.wgsl"),
+            format,
+            depth_format,
+            &[camera_bind_group_layout, &sketch_bind_group_layout],
+        )
+        .with_vertex_layouts(vec![SketchVertex::layout()])
+        .with_topology(wgpu::PrimitiveTopology::PointList)
+        .with_blend(wgpu::BlendState::ALPHA_BLENDING)
+        .with_depth_write(false)
+        .with_entry_point("vs_point", "fs_point")
+        .build(device);
+
+        // Create camera bind group
+        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Sketch Camera Bind Group"),
+            layout: camera_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: camera_buffer.as_entire_binding(),
+            }],
+        });
+
+        self.line_pipeline = Some(line_pipeline);
+        self.point_pipeline = Some(point_pipeline);
+        self.camera_bind_group = Some(camera_bind_group);
+        self.sketch_bind_group_layout = Some(sketch_bind_group_layout);
+        self.initialized = true;
     }
 
     /// Set sketch data to render.
@@ -256,6 +330,118 @@ impl SketchRenderer {
     /// Clear all sketches.
     pub fn clear_sketches(&mut self) {
         self.pending_sketches.clear();
+    }
+
+    /// Prepare GPU resources for rendering (standalone version without RenderContext).
+    pub fn prepare_with_device(&mut self, device: &wgpu::Device) {
+        if !self.initialized {
+            return;
+        }
+
+        let layout = self.sketch_bind_group_layout.as_ref().unwrap();
+
+        // Update GPU resources for each sketch
+        for sketch_data in &self.pending_sketches {
+            let uniform = SketchUniform {
+                transform: sketch_data.transform.to_cols_array_2d(),
+                plane_color: [0.5, 0.5, 0.5, 0.2],
+            };
+
+            let line_count = sketch_data.line_vertices.len() as u32;
+            let point_count = sketch_data.point_vertices.len() as u32;
+
+            // Create buffers
+            let line_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Sketch Line Buffer"),
+                contents: if sketch_data.line_vertices.is_empty() {
+                    &[0u8; std::mem::size_of::<SketchVertex>()]
+                } else {
+                    bytemuck::cast_slice(&sketch_data.line_vertices)
+                },
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            });
+
+            let point_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Sketch Point Buffer"),
+                contents: if sketch_data.point_vertices.is_empty() {
+                    &[0u8; std::mem::size_of::<SketchVertex>()]
+                } else {
+                    bytemuck::cast_slice(&sketch_data.point_vertices)
+                },
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            });
+
+            let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Sketch Uniform Buffer"),
+                contents: bytemuck::bytes_of(&uniform),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
+
+            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Sketch Bind Group"),
+                layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: uniform_buffer.as_entire_binding(),
+                }],
+            });
+
+            self.sketch_resources.insert(
+                sketch_data.id,
+                SketchGpuResources {
+                    line_buffer,
+                    point_buffer,
+                    uniform_buffer,
+                    bind_group,
+                    line_count,
+                    point_count,
+                },
+            );
+        }
+
+        // Remove resources for sketches no longer being rendered
+        let active_ids: std::collections::HashSet<Uuid> =
+            self.pending_sketches.iter().map(|s| s.id).collect();
+        self.sketch_resources
+            .retain(|id, _| active_ids.contains(id));
+    }
+
+    /// Render sketches (standalone version without Scene).
+    pub fn render_pass<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>) {
+        if !self.initialized || self.pending_sketches.is_empty() {
+            return;
+        }
+
+        let line_pipeline = self.line_pipeline.as_ref().unwrap();
+        let point_pipeline = self.point_pipeline.as_ref().unwrap();
+        let camera_bind_group = self.camera_bind_group.as_ref().unwrap();
+
+        // Render lines for each sketch
+        pass.set_pipeline(line_pipeline);
+        pass.set_bind_group(0, camera_bind_group, &[]);
+
+        for sketch_data in &self.pending_sketches {
+            if let Some(resources) = self.sketch_resources.get(&sketch_data.id)
+                && resources.line_count > 0
+            {
+                pass.set_bind_group(1, &resources.bind_group, &[]);
+                pass.set_vertex_buffer(0, resources.line_buffer.slice(..));
+                pass.draw(0..resources.line_count, 0..1);
+            }
+        }
+
+        // Render points for each sketch
+        pass.set_pipeline(point_pipeline);
+
+        for sketch_data in &self.pending_sketches {
+            if let Some(resources) = self.sketch_resources.get(&sketch_data.id)
+                && resources.point_count > 0
+            {
+                pass.set_bind_group(1, &resources.bind_group, &[]);
+                pass.set_vertex_buffer(0, resources.point_buffer.slice(..));
+                pass.draw(0..resources.point_count, 0..1);
+            }
+        }
     }
 }
 

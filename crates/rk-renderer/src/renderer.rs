@@ -33,7 +33,8 @@ use crate::resources::MeshManager;
 use crate::scene::Scene;
 use crate::sub_renderers::{
     AxisInstance, AxisRenderer, CollisionRenderer, GizmoAxis, GizmoMode, GizmoRenderer, GizmoSpace,
-    GridRenderer, MarkerInstance, MarkerRenderer, MeshData, MeshRenderer,
+    GridRenderer, MarkerInstance, MarkerRenderer, MeshData, MeshRenderer, SketchRenderData,
+    SketchRenderer,
 };
 
 /// Mesh entry with bind group
@@ -98,6 +99,7 @@ pub struct Renderer {
     marker_renderer: MarkerRenderer,
     gizmo_renderer: GizmoRenderer,
     collision_renderer: CollisionRenderer,
+    sketch_renderer: SketchRenderer,
 
     // Data - UUID-keyed storage for O(1) lookup and removal
     meshes: HashMap<Uuid, MeshEntry>,
@@ -254,6 +256,15 @@ impl Renderer {
             &camera_buffer,
         );
 
+        let mut sketch_renderer = SketchRenderer::new();
+        sketch_renderer.init(
+            device,
+            format,
+            depth_format,
+            &camera_bind_group_layout,
+            &camera_buffer,
+        );
+
         // Initialize new architectural components
         let scene = Scene::new();
         let mesh_manager = MeshManager::new();
@@ -289,6 +300,7 @@ impl Renderer {
             marker_renderer,
             gizmo_renderer,
             collision_renderer,
+            sketch_renderer,
             meshes: HashMap::new(),
             selected_part: None,
             show_grid: true,
@@ -737,6 +749,28 @@ impl Renderer {
         &self.collision_renderer
     }
 
+    // ========== Sketch renderer methods ==========
+
+    /// Get mutable reference to sketch renderer
+    pub fn sketch_renderer_mut(&mut self) -> &mut SketchRenderer {
+        &mut self.sketch_renderer
+    }
+
+    /// Get reference to sketch renderer
+    pub fn sketch_renderer(&self) -> &SketchRenderer {
+        &self.sketch_renderer
+    }
+
+    /// Set sketch data to render
+    pub fn set_sketch_data(&mut self, sketches: Vec<SketchRenderData>) {
+        self.sketch_renderer.set_sketches(sketches);
+    }
+
+    /// Prepare sketch renderer (call before render)
+    pub fn prepare_sketches(&mut self, device: &wgpu::Device) {
+        self.sketch_renderer.prepare_with_device(device);
+    }
+
     /// Render the scene.
     pub fn render(
         &self,
@@ -852,6 +886,9 @@ impl Renderer {
 
         // Render collision shapes (semi-transparent, after markers)
         self.collision_renderer.render(&mut render_pass);
+
+        // Render sketches
+        self.sketch_renderer.render_pass(&mut render_pass);
 
         // Render gizmo (always on top)
         if self.show_gizmo {

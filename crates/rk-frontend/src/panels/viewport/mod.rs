@@ -2,8 +2,9 @@
 
 mod camera_overlay;
 
-use glam::Vec3;
-use rk_renderer::{GizmoAxis, GizmoMode, GizmoSpace};
+use glam::{Vec2, Vec3};
+use rk_cad::{Sketch, SketchEntity};
+use rk_renderer::{GizmoAxis, GizmoMode, GizmoSpace, SketchRenderData};
 
 use crate::config::SharedConfig;
 use crate::panels::Panel;
@@ -12,6 +13,113 @@ use crate::state::{
 };
 
 use camera_overlay::{render_axes_indicator, render_camera_settings, render_gizmo_toggle};
+
+/// Colors for sketch rendering
+mod sketch_colors {
+    use glam::Vec4;
+
+    pub const POINT: Vec4 = Vec4::new(0.0, 0.8, 0.0, 1.0); // Green
+    pub const LINE: Vec4 = Vec4::new(1.0, 1.0, 1.0, 1.0); // White
+    pub const CIRCLE: Vec4 = Vec4::new(0.0, 0.7, 1.0, 1.0); // Cyan
+    pub const ARC: Vec4 = Vec4::new(0.0, 0.7, 1.0, 1.0); // Cyan
+    pub const SELECTED: Vec4 = Vec4::new(1.0, 0.5, 0.0, 1.0); // Orange
+}
+
+/// Convert a Sketch to SketchRenderData
+fn sketch_to_render_data(
+    sketch: &Sketch,
+    selected_entities: &[uuid::Uuid],
+    is_active: bool,
+) -> SketchRenderData {
+    let mut render_data = SketchRenderData::new(sketch.id, sketch.plane.transform());
+    render_data.is_active = is_active;
+
+    // First pass: collect all point positions
+    let mut point_positions: std::collections::HashMap<uuid::Uuid, Vec2> =
+        std::collections::HashMap::new();
+
+    for entity in sketch.entities().values() {
+        if let SketchEntity::Point { id, position } = entity {
+            point_positions.insert(*id, *position);
+        }
+    }
+
+    // Second pass: render entities
+    for entity in sketch.entities().values() {
+        let entity_id = entity.id();
+        let is_selected = selected_entities.contains(&entity_id);
+        let flags = if is_selected { 1 } else { 0 };
+
+        match entity {
+            SketchEntity::Point { position, .. } => {
+                let color = if is_selected {
+                    sketch_colors::SELECTED
+                } else {
+                    sketch_colors::POINT
+                };
+                render_data.add_point(*position, color, flags);
+            }
+            SketchEntity::Line { start, end, .. } => {
+                if let (Some(&start_pos), Some(&end_pos)) =
+                    (point_positions.get(start), point_positions.get(end))
+                {
+                    let color = if is_selected {
+                        sketch_colors::SELECTED
+                    } else {
+                        sketch_colors::LINE
+                    };
+                    render_data.add_line(start_pos, end_pos, color, flags);
+                }
+            }
+            SketchEntity::Circle { center, radius, .. } => {
+                if let Some(&center_pos) = point_positions.get(center) {
+                    let color = if is_selected {
+                        sketch_colors::SELECTED
+                    } else {
+                        sketch_colors::CIRCLE
+                    };
+                    render_data.add_circle(center_pos, *radius, color, flags, 64);
+                }
+            }
+            SketchEntity::Arc {
+                center,
+                start,
+                end,
+                radius,
+                ..
+            } => {
+                if let (Some(&center_pos), Some(&start_pos), Some(&end_pos)) = (
+                    point_positions.get(center),
+                    point_positions.get(start),
+                    point_positions.get(end),
+                ) {
+                    let color = if is_selected {
+                        sketch_colors::SELECTED
+                    } else {
+                        sketch_colors::ARC
+                    };
+                    // Calculate start and end angles
+                    let start_offset = start_pos - center_pos;
+                    let end_offset = end_pos - center_pos;
+                    let start_angle = start_offset.y.atan2(start_offset.x);
+                    let end_angle = end_offset.y.atan2(end_offset.x);
+                    render_data.add_arc(
+                        center_pos,
+                        *radius,
+                        start_angle,
+                        end_angle,
+                        color,
+                        flags,
+                        32,
+                    );
+                }
+            }
+            _ => {} // Other entity types not yet rendered
+        }
+    }
+
+    render_data
+}
 
 /// 3D viewport panel
 pub struct ViewportPanel {
@@ -119,10 +227,42 @@ impl Panel for ViewportPanel {
 
         // Ensure texture and render
         let texture_id = {
-            let mut state = viewport_state.lock();
+            let mut vp_state = viewport_state.lock();
             let mut egui_renderer = render_state.renderer.write();
-            let tex_id = state.ensure_texture(width, height, &mut egui_renderer);
-            state.render();
+            let tex_id = vp_state.ensure_texture(width, height, &mut egui_renderer);
+
+            // Update sketch data for rendering
+            let sketch_render_data: Vec<SketchRenderData> = {
+                let app = app_state.lock();
+                let cad = &app.cad;
+
+                // Get selected entities if in sketch mode
+                let selected_entities: Vec<uuid::Uuid> = cad
+                    .editor_mode
+                    .sketch()
+                    .map(|s| s.selected_entities.clone())
+                    .unwrap_or_default();
+
+                let active_sketch_id = cad.editor_mode.sketch().map(|s| s.active_sketch);
+
+                // Convert all sketches to render data
+                cad.data
+                    .history
+                    .sketches()
+                    .values()
+                    .map(|sketch| {
+                        let is_active = active_sketch_id == Some(sketch.id);
+                        sketch_to_render_data(sketch, &selected_entities, is_active)
+                    })
+                    .collect()
+            };
+
+            // Set sketch data and prepare GPU resources
+            let device = vp_state.device.clone();
+            vp_state.renderer.set_sketch_data(sketch_render_data);
+            vp_state.renderer.prepare_sketches(&device);
+
+            vp_state.render();
             tex_id
         };
 

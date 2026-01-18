@@ -123,6 +123,15 @@ pub enum CadError {
 
     #[error("Operation failed: {0}")]
     OperationFailed(String),
+
+    #[error("File I/O error: {0}")]
+    FileIo(String),
+
+    #[error("STEP import failed: {0}")]
+    StepImport(String),
+
+    #[error("STEP export failed: {0}")]
+    StepExport(String),
 }
 
 /// Result type for CAD operations
@@ -289,6 +298,39 @@ pub enum BooleanType {
     Intersect,
 }
 
+// ========== STEP File I/O Types ==========
+
+/// Options for STEP file import
+#[derive(Debug, Clone, Default)]
+pub struct StepImportOptions {
+    /// Tessellation tolerance for mesh conversion (lower = finer mesh)
+    /// Default: 0.1
+    pub tessellation_tolerance: Option<f32>,
+    /// Whether to import as solids (true) or directly tessellate to meshes (false)
+    /// Default: false (tessellate immediately)
+    pub import_as_solids: bool,
+}
+
+/// Options for STEP file export
+#[derive(Debug, Clone, Default)]
+pub struct StepExportOptions {
+    /// Application name in STEP header
+    pub author: Option<String>,
+    /// Organization name in STEP header
+    pub organization: Option<String>,
+}
+
+/// Result of STEP import containing multiple bodies
+#[derive(Debug, Clone, Default)]
+pub struct StepImportResult {
+    /// Imported solids (if import_as_solids was true)
+    pub solids: Vec<Solid>,
+    /// Pre-tessellated meshes (if import_as_solids was false)
+    pub meshes: Vec<TessellatedMesh>,
+    /// Names extracted from STEP entities (if available)
+    pub names: Vec<Option<String>>,
+}
+
 /// The main CAD kernel trait
 ///
 /// Implementations of this trait provide the actual geometry operations
@@ -439,6 +481,45 @@ pub trait CadKernel: Send + Sync {
         create_solid: bool,
         ruled: bool,
     ) -> CadResult<Solid>;
+
+    // ========== STEP File I/O Methods ==========
+
+    /// Import a STEP file
+    ///
+    /// # Arguments
+    /// * `path` - Path to the STEP file
+    /// * `options` - Import options
+    fn import_step(
+        &self,
+        path: &std::path::Path,
+        options: &StepImportOptions,
+    ) -> CadResult<StepImportResult>;
+
+    /// Export a solid to a STEP file
+    ///
+    /// # Arguments
+    /// * `solid` - The solid to export
+    /// * `path` - Output file path
+    /// * `options` - Export options
+    fn export_step(
+        &self,
+        solid: &Solid,
+        path: &std::path::Path,
+        options: &StepExportOptions,
+    ) -> CadResult<()>;
+
+    /// Export multiple solids to a single STEP file
+    ///
+    /// # Arguments
+    /// * `solids` - The solids to export
+    /// * `path` - Output file path
+    /// * `options` - Export options
+    fn export_step_multi(
+        &self,
+        solids: &[&Solid],
+        path: &std::path::Path,
+        options: &StepExportOptions,
+    ) -> CadResult<()>;
 }
 
 /// A null kernel that always returns errors (used when no kernel is available)
@@ -575,18 +656,50 @@ impl CadKernel for NullKernel {
             "No CAD kernel available".into(),
         ))
     }
+
+    fn import_step(
+        &self,
+        _path: &std::path::Path,
+        _options: &StepImportOptions,
+    ) -> CadResult<StepImportResult> {
+        Err(CadError::KernelNotAvailable(
+            "No CAD kernel available for STEP import".into(),
+        ))
+    }
+
+    fn export_step(
+        &self,
+        _solid: &Solid,
+        _path: &std::path::Path,
+        _options: &StepExportOptions,
+    ) -> CadResult<()> {
+        Err(CadError::KernelNotAvailable(
+            "No CAD kernel available for STEP export".into(),
+        ))
+    }
+
+    fn export_step_multi(
+        &self,
+        _solids: &[&Solid],
+        _path: &std::path::Path,
+        _options: &StepExportOptions,
+    ) -> CadResult<()> {
+        Err(CadError::KernelNotAvailable(
+            "No CAD kernel available for STEP export".into(),
+        ))
+    }
 }
 
 /// Get the default CAD kernel based on available features
 pub fn default_kernel() -> Box<dyn CadKernel> {
     #[cfg(feature = "opencascade")]
     {
-        return Box::new(super::OpenCascadeKernel::new());
+        Box::new(super::OpenCascadeKernel::new())
     }
 
-    #[cfg(feature = "truck")]
+    #[cfg(all(feature = "truck", not(feature = "opencascade")))]
     {
-        return Box::new(super::TruckKernel::new());
+        Box::new(super::TruckKernel::new())
     }
 
     #[cfg(not(any(feature = "opencascade", feature = "truck")))]

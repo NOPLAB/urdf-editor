@@ -4,6 +4,10 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+default = []
+cad = ["dep:rk-cad"]
+
 [dependencies]
 glam = { workspace = true, features = ["serde"] }
 serde = { workspace = true }
@@ -15,6 +19,7 @@ stl_io = { workspace = true }
 bytemuck = { workspace = true }
 tobj = { workspace = true }
 dae-parser = { workspace = true }
+rk-cad = { path = "../rk-cad", optional = true }
 
 [dev-dependencies]
 tempfile = "3"

@@ -3248,6 +3248,7 @@ dependencies = [
  "bytemuck",
  "dae-parser",
  "glam",
+ "rk-cad",
  "ron",
  "serde",
  "stl_io",

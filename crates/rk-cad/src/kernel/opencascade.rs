@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use super::{
     Axis3D, BooleanType, CadError, CadKernel, CadResult, EdgeId, EdgeInfo, FaceId, FaceInfo, Solid,
-    TessellatedMesh, Wire2D,
+    StepExportOptions, StepImportOptions, StepImportResult, TessellatedMesh, Wire2D,
 };
 
 // Re-export OpenCASCADE types
@@ -688,6 +688,165 @@ impl CadKernel for OpenCascadeKernel {
         let result = ffi::BRepOffsetAPI_ThruSections_Shape(&loft);
         Ok(self.store_solid(result))
     }
+
+    fn import_step(
+        &self,
+        path: &std::path::Path,
+        options: &StepImportOptions,
+    ) -> CadResult<StepImportResult> {
+        let path_str = path.to_string_lossy().to_string();
+
+        // Create STEP reader
+        let mut reader = ffi::STEPControl_Reader_ctor();
+
+        // Read the file
+        let status = ffi::read_step(reader.pin_mut(), path_str);
+        if status != ffi::IFSelect_ReturnStatus::IFSelect_RetDone {
+            return Err(CadError::StepImport(format!(
+                "Failed to read STEP file: {:?}",
+                status
+            )));
+        }
+
+        // Transfer roots to shapes
+        let progress = ffi::Message_ProgressRange_ctor();
+        let num_roots = reader.pin_mut().TransferRoots(&progress);
+        if num_roots == 0 {
+            return Err(CadError::StepImport(
+                "No valid shapes found in STEP file".into(),
+            ));
+        }
+
+        // Get the combined shape
+        let compound_shape = ffi::one_shape(&reader);
+
+        let mut solids = Vec::new();
+        let mut meshes = Vec::new();
+        let mut names = Vec::new();
+
+        // Enumerate all solids in the compound
+        let mut explorer =
+            ffi::TopExp_Explorer_ctor(&compound_shape, ffi::TopAbs_ShapeEnum::TopAbs_SOLID);
+
+        while ffi::TopExp_Explorer_More(&explorer) {
+            let solid_shape = ffi::TopExp_Explorer_Current(&explorer);
+
+            // Clone the shape for storage
+            let cloned = ffi::BRepBuilderAPI_Copy_ctor(&solid_shape).Shape();
+
+            if options.import_as_solids {
+                let solid = self.store_solid(cloned);
+                solids.push(solid);
+            } else {
+                // Tessellate immediately
+                let tolerance = options.tessellation_tolerance.unwrap_or(0.1);
+                let mesh = self.tessellate_shape(&cloned, tolerance)?;
+                meshes.push(mesh);
+            }
+
+            names.push(None); // TODO: Extract names from STEP entities
+
+            ffi::TopExp_Explorer_Next(&mut explorer);
+        }
+
+        // If no solids found, try the compound shape directly
+        if solids.is_empty() && meshes.is_empty() {
+            if options.import_as_solids {
+                let solid =
+                    self.store_solid(ffi::BRepBuilderAPI_Copy_ctor(&compound_shape).Shape());
+                solids.push(solid);
+            } else {
+                let tolerance = options.tessellation_tolerance.unwrap_or(0.1);
+                let mesh = self.tessellate_shape(&compound_shape, tolerance)?;
+                meshes.push(mesh);
+            }
+            names.push(None);
+        }
+
+        Ok(StepImportResult {
+            solids,
+            meshes,
+            names,
+        })
+    }
+
+    fn export_step(
+        &self,
+        solid: &Solid,
+        path: &std::path::Path,
+        _options: &StepExportOptions,
+    ) -> CadResult<()> {
+        let occ_solid = self
+            .get_solid(solid.id)
+            .ok_or_else(|| CadError::OperationFailed("Solid not found".into()))?;
+
+        let path_str = path.to_string_lossy().to_string();
+
+        // Create STEP writer
+        let mut writer = ffi::STEPControl_Writer_ctor();
+
+        // Transfer shape
+        let status = ffi::transfer_shape(writer.pin_mut(), &occ_solid.shape);
+        if status != ffi::IFSelect_ReturnStatus::IFSelect_RetDone {
+            return Err(CadError::StepExport(format!(
+                "Failed to transfer shape: {:?}",
+                status
+            )));
+        }
+
+        // Write file
+        let status = ffi::write_step(writer.pin_mut(), path_str);
+        if status != ffi::IFSelect_ReturnStatus::IFSelect_RetDone {
+            return Err(CadError::StepExport(format!(
+                "Failed to write STEP file: {:?}",
+                status
+            )));
+        }
+
+        Ok(())
+    }
+
+    fn export_step_multi(
+        &self,
+        solids: &[&Solid],
+        path: &std::path::Path,
+        _options: &StepExportOptions,
+    ) -> CadResult<()> {
+        if solids.is_empty() {
+            return Err(CadError::StepExport("No solids to export".into()));
+        }
+
+        let path_str = path.to_string_lossy().to_string();
+
+        // Create STEP writer
+        let mut writer = ffi::STEPControl_Writer_ctor();
+
+        // Transfer each solid
+        for solid in solids {
+            let occ_solid = self
+                .get_solid(solid.id)
+                .ok_or_else(|| CadError::OperationFailed("Solid not found".into()))?;
+
+            let status = ffi::transfer_shape(writer.pin_mut(), &occ_solid.shape);
+            if status != ffi::IFSelect_ReturnStatus::IFSelect_RetDone {
+                return Err(CadError::StepExport(format!(
+                    "Failed to transfer shape: {:?}",
+                    status
+                )));
+            }
+        }
+
+        // Write file
+        let status = ffi::write_step(writer.pin_mut(), path_str);
+        if status != ffi::IFSelect_ReturnStatus::IFSelect_RetDone {
+            return Err(CadError::StepExport(format!(
+                "Failed to write STEP file: {:?}",
+                status
+            )));
+        }
+
+        Ok(())
+    }
 }
 
 impl OpenCascadeKernel {
@@ -734,5 +893,81 @@ impl OpenCascadeKernel {
                 *normal = [0.0, 1.0, 0.0];
             }
         }
+    }
+
+    /// Tessellate a shape directly (for STEP import)
+    fn tessellate_shape(
+        &self,
+        shape: &cxx::UniquePtr<ffi::TopoDS_Shape>,
+        tolerance: f32,
+    ) -> CadResult<TessellatedMesh> {
+        // Create mesh
+        let mut _mesh_builder =
+            ffi::BRepMesh_IncrementalMesh_ctor(shape, tolerance as f64, false, 0.5, true);
+
+        let mut result = TessellatedMesh::new();
+
+        // Extract triangulation from each face
+        let mut explorer = ffi::TopExp_Explorer_ctor(shape, ffi::TopAbs_ShapeEnum::TopAbs_FACE);
+
+        while ffi::TopExp_Explorer_More(&explorer) {
+            let face_shape = ffi::TopExp_Explorer_Current(&explorer);
+            let face = ffi::TopoDS_cast_to_face(&face_shape);
+
+            let location = ffi::TopLoc_Location_ctor();
+            let triangulation = ffi::BRep_Tool_Triangulation(&face, &location);
+
+            if !triangulation.is_null() {
+                let nb_nodes = ffi::Poly_Triangulation_NbNodes(&triangulation);
+                let nb_triangles = ffi::Poly_Triangulation_NbTriangles(&triangulation);
+
+                let vertex_offset = result.vertices.len() as u32;
+
+                // Extract vertices
+                for i in 1..=nb_nodes {
+                    let node = ffi::Poly_Triangulation_Node(&triangulation, i);
+                    let transformed = ffi::gp_Pnt_Transformed(
+                        &node,
+                        &ffi::TopLoc_Location_Transformation(&location),
+                    );
+                    result.vertices.push([
+                        ffi::gp_Pnt_X(&transformed) as f32,
+                        ffi::gp_Pnt_Y(&transformed) as f32,
+                        ffi::gp_Pnt_Z(&transformed) as f32,
+                    ]);
+                    // Placeholder normals
+                    result.normals.push([0.0, 1.0, 0.0]);
+                }
+
+                // Extract triangles
+                for i in 1..=nb_triangles {
+                    let triangle = ffi::Poly_Triangulation_Triangle(&triangulation, i);
+                    let (n1, n2, n3) = (
+                        ffi::Poly_Triangle_Value(&triangle, 1) as u32 - 1 + vertex_offset,
+                        ffi::Poly_Triangle_Value(&triangle, 2) as u32 - 1 + vertex_offset,
+                        ffi::Poly_Triangle_Value(&triangle, 3) as u32 - 1 + vertex_offset,
+                    );
+
+                    // Check face orientation
+                    let orientation = ffi::TopoDS_Shape_Orientation(&face_shape);
+                    if orientation == ffi::TopAbs_Orientation::TopAbs_REVERSED {
+                        result.indices.push(n1);
+                        result.indices.push(n3);
+                        result.indices.push(n2);
+                    } else {
+                        result.indices.push(n1);
+                        result.indices.push(n2);
+                        result.indices.push(n3);
+                    }
+                }
+            }
+
+            ffi::TopExp_Explorer_Next(&mut explorer);
+        }
+
+        // Compute normals from triangles
+        self.compute_normals(&mut result);
+
+        Ok(result)
     }
 }

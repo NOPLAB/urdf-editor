@@ -14,7 +14,7 @@ use truck_modeling::{InnerSpace, Point3, Solid as TruckSolid, Vector3, Vertex, W
 
 use super::{
     Axis3D, BooleanType, CadError, CadKernel, CadResult, EdgeId, EdgeInfo, FaceId, FaceInfo, Solid,
-    TessellatedMesh, Wire2D,
+    StepExportOptions, StepImportOptions, StepImportResult, TessellatedMesh, Wire2D,
 };
 
 /// Truck-based CAD kernel
@@ -332,6 +332,38 @@ impl CadKernel for TruckKernel {
     ) -> CadResult<Solid> {
         Err(CadError::OperationFailed(
             "Loft is not supported in Truck kernel".into(),
+        ))
+    }
+
+    fn import_step(
+        &self,
+        _path: &std::path::Path,
+        _options: &StepImportOptions,
+    ) -> CadResult<StepImportResult> {
+        Err(CadError::OperationFailed(
+            "STEP import is not supported in Truck kernel. Use OpenCASCADE kernel.".into(),
+        ))
+    }
+
+    fn export_step(
+        &self,
+        _solid: &Solid,
+        _path: &std::path::Path,
+        _options: &StepExportOptions,
+    ) -> CadResult<()> {
+        Err(CadError::OperationFailed(
+            "STEP export is not supported in Truck kernel. Use OpenCASCADE kernel.".into(),
+        ))
+    }
+
+    fn export_step_multi(
+        &self,
+        _solids: &[&Solid],
+        _path: &std::path::Path,
+        _options: &StepExportOptions,
+    ) -> CadResult<()> {
+        Err(CadError::OperationFailed(
+            "STEP export is not supported in Truck kernel. Use OpenCASCADE kernel.".into(),
         ))
     }
 }

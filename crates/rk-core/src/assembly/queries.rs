@@ -9,16 +9,6 @@ use super::types::Link;
 impl Assembly {
     // ============== Query Helpers ==============
 
-    /// Get a link's name by ID
-    pub fn get_link_name(&self, link_id: Uuid) -> Option<&str> {
-        self.links.get(&link_id).map(|l| l.name.as_str())
-    }
-
-    /// Get a joint's name by ID
-    pub fn get_joint_name(&self, joint_id: Uuid) -> Option<&str> {
-        self.joints.get(&joint_id).map(|j| j.name.as_str())
-    }
-
     /// Find a link by name (O(1) lookup)
     pub fn find_link_by_name(&self, name: &str) -> Option<&Link> {
         self.link_name_index
@@ -177,16 +167,6 @@ impl Assembly {
     }
 
     // ============== Extended Query API ==============
-
-    /// Get multiple links by IDs (batch operation)
-    pub fn get_links_batch(&self, ids: &[Uuid]) -> Vec<Option<&Link>> {
-        ids.iter().map(|id| self.links.get(id)).collect()
-    }
-
-    /// Get multiple joints by IDs (batch operation)
-    pub fn get_joints_batch(&self, ids: &[Uuid]) -> Vec<Option<&Joint>> {
-        ids.iter().map(|id| self.joints.get(id)).collect()
-    }
 
     /// Get all leaf links (links with no children)
     pub fn get_leaf_links(&self) -> Vec<Uuid> {

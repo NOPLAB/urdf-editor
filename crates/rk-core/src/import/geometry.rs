@@ -13,14 +13,23 @@ use crate::primitive::{generate_box_mesh, generate_cylinder_mesh, generate_spher
 use super::ImportError;
 use super::options::ImportOptions;
 
+/// Context for geometry processing operations
+pub struct GeometryContext<'a> {
+    /// Base directory for resolving relative paths
+    pub base_dir: &'a Path,
+    /// Import options
+    pub options: &'a ImportOptions,
+    /// Material name to color mapping
+    pub material_colors: &'a HashMap<String, [f32; 4]>,
+    /// Package name to path mapping for package:// URIs
+    pub package_paths: &'a HashMap<String, PathBuf>,
+}
+
 /// Process visual geometry elements and create a Part if mesh is found
 pub fn process_visual_geometry(
     visuals: &[urdf_rs::Visual],
     link_name: &str,
-    base_dir: &Path,
-    options: &ImportOptions,
-    material_colors: &HashMap<String, [f32; 4]>,
-    package_paths: &HashMap<String, PathBuf>,
+    ctx: &GeometryContext,
 ) -> Result<(Option<Part>, Vec<VisualElement>), ImportError> {
     if visuals.is_empty() {
         return Ok((None, Vec::new()));
@@ -29,16 +38,14 @@ pub fn process_visual_geometry(
     // Process first visual element (primary) - used to create Part
     let first_visual = &visuals[0];
     let (color, material_name, _texture) =
-        extract_material_info(first_visual, material_colors, options);
+        extract_material_info(first_visual, ctx.material_colors, ctx.options);
     let origin = Pose::from(&first_visual.origin);
 
     // Create part from first visual's geometry
     let mut part = process_geometry(
         &first_visual.geometry,
         link_name,
-        base_dir,
-        options,
-        package_paths,
+        ctx,
         color,
         material_name.clone(),
     )?;
@@ -52,7 +59,7 @@ pub fn process_visual_geometry(
     let mut visual_elements = Vec::new();
     for (i, visual) in visuals.iter().enumerate() {
         let (elem_color, elem_material, elem_texture) =
-            extract_material_info(visual, material_colors, options);
+            extract_material_info(visual, ctx.material_colors, ctx.options);
         let elem_origin = Pose::from(&visual.origin);
         let elem_geometry = GeometryType::from(&visual.geometry);
 
@@ -112,17 +119,15 @@ pub fn extract_material_info(
 pub fn process_geometry(
     geometry: &urdf_rs::Geometry,
     link_name: &str,
-    base_dir: &Path,
-    options: &ImportOptions,
-    package_paths: &HashMap<String, PathBuf>,
+    ctx: &GeometryContext,
     color: [f32; 4],
     material_name: Option<String>,
 ) -> Result<Option<Part>, ImportError> {
     let part = match geometry {
         urdf_rs::Geometry::Mesh { filename, scale } => {
-            let mesh_path = resolve_mesh_path(filename, base_dir, package_paths)?;
+            let mesh_path = resolve_mesh_path(filename, ctx.base_dir, ctx.package_paths)?;
             let mut part =
-                load_mesh(&mesh_path, options.stl_unit).map_err(|e| ImportError::MeshLoad {
+                load_mesh(&mesh_path, ctx.options.stl_unit).map_err(|e| ImportError::MeshLoad {
                     path: filename.clone(),
                     reason: e.to_string(),
                 })?;
@@ -141,55 +146,35 @@ pub fn process_geometry(
 
         urdf_rs::Geometry::Box { size } => {
             let size = [size.0[0] as f32, size.0[1] as f32, size.0[2] as f32];
-            let (vertices, normals, indices) = generate_box_mesh(size);
-            Some(create_part_from_mesh(
+            Some(create_primitive_part(
                 link_name,
-                vertices,
-                normals,
-                indices,
+                generate_box_mesh(size),
                 color,
                 material_name,
             ))
         }
 
-        urdf_rs::Geometry::Cylinder { radius, length } => {
-            let (vertices, normals, indices) =
-                generate_cylinder_mesh(*radius as f32, *length as f32);
-            Some(create_part_from_mesh(
-                link_name,
-                vertices,
-                normals,
-                indices,
-                color,
-                material_name,
-            ))
-        }
+        urdf_rs::Geometry::Cylinder { radius, length } => Some(create_primitive_part(
+            link_name,
+            generate_cylinder_mesh(*radius as f32, *length as f32),
+            color,
+            material_name,
+        )),
 
-        urdf_rs::Geometry::Sphere { radius } => {
-            let (vertices, normals, indices) = generate_sphere_mesh(*radius as f32);
-            Some(create_part_from_mesh(
-                link_name,
-                vertices,
-                normals,
-                indices,
-                color,
-                material_name,
-            ))
-        }
+        urdf_rs::Geometry::Sphere { radius } => Some(create_primitive_part(
+            link_name,
+            generate_sphere_mesh(*radius as f32),
+            color,
+            material_name,
+        )),
 
-        urdf_rs::Geometry::Capsule { radius, length } => {
-            // Approximate capsule as cylinder (capsule mesh generation would be more complex)
-            let (vertices, normals, indices) =
-                generate_cylinder_mesh(*radius as f32, *length as f32);
-            Some(create_part_from_mesh(
-                link_name,
-                vertices,
-                normals,
-                indices,
-                color,
-                material_name,
-            ))
-        }
+        // Approximate capsule as cylinder (capsule mesh generation would be more complex)
+        urdf_rs::Geometry::Capsule { radius, length } => Some(create_primitive_part(
+            link_name,
+            generate_cylinder_mesh(*radius as f32, *length as f32),
+            color,
+            material_name,
+        )),
     };
 
     Ok(part)
@@ -209,6 +194,17 @@ pub fn process_collision_geometry(collisions: &[urdf_rs::Collision]) -> Vec<Coll
             geometry: GeometryType::from(&collision.geometry),
         })
         .collect()
+}
+
+/// Create a Part from primitive geometry mesh data (box, cylinder, sphere, capsule)
+fn create_primitive_part(
+    name: &str,
+    mesh_data: (Vec<[f32; 3]>, Vec<[f32; 3]>, Vec<u32>),
+    color: [f32; 4],
+    material_name: Option<String>,
+) -> Part {
+    let (vertices, normals, indices) = mesh_data;
+    create_part_from_mesh(name, vertices, normals, indices, color, material_name)
 }
 
 /// Create a Part from mesh data

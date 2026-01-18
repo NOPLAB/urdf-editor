@@ -22,6 +22,13 @@ pub use geometry::{
 };
 pub use options::ImportOptions;
 
+/// Result of processing URDF links: (parts, links, link_name_to_id mapping)
+type ProcessedLinks = (
+    HashMap<Uuid, Part>,
+    HashMap<Uuid, Link>,
+    HashMap<String, Uuid>,
+);
+
 /// Errors that can occur during URDF import
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum ImportError {
@@ -136,18 +143,10 @@ fn collect_materials(
 }
 
 /// Process URDF links and create Parts and Links
-#[allow(clippy::type_complexity)]
 fn process_urdf_links(
     urdf_links: &[urdf_rs::Link],
     ctx: &GeometryContext,
-) -> Result<
-    (
-        HashMap<Uuid, Part>,
-        HashMap<Uuid, Link>,
-        HashMap<String, Uuid>,
-    ),
-    ImportError,
-> {
+) -> Result<ProcessedLinks, ImportError> {
     let mut parts: HashMap<Uuid, Part> = HashMap::new();
     let mut links: HashMap<Uuid, Link> = HashMap::new();
     let mut link_name_to_id: HashMap<String, Uuid> = HashMap::new();

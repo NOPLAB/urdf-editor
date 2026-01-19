@@ -636,6 +636,12 @@ pub enum SketchAction {
     ConfirmDimensionConstraint,
     /// Cancel dimension dialog
     CancelDimensionDialog,
+    /// Delete a sketch
+    DeleteSketch { sketch_id: Uuid },
+    /// Delete a feature
+    DeleteFeature { feature_id: Uuid },
+    /// Toggle feature suppression
+    ToggleFeatureSuppression { feature_id: Uuid },
 }
 
 /// Extended CAD state for the application

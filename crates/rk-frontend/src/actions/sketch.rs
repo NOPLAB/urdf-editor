@@ -598,6 +598,137 @@ pub fn handle_sketch_action(action: AppAction, ctx: &ActionContext) {
                 sketch_state.clear_selection();
             }
         }
+
+        SketchAction::DeleteSketch { sketch_id } => {
+            let mut state = ctx.app_state.lock();
+
+            // Exit sketch mode if we're editing this sketch
+            if let Some(sketch_state) = state.cad.editor_mode.sketch()
+                && sketch_state.active_sketch == sketch_id
+            {
+                state.cad.exit_sketch_mode();
+                info!("Exited sketch mode before deleting sketch");
+            }
+
+            // Remove the sketch from history
+            if state.cad.data.history.remove_sketch(sketch_id).is_some() {
+                info!("Deleted sketch: {}", sketch_id);
+                state.modified = true;
+            } else {
+                tracing::warn!("Sketch not found for deletion: {}", sketch_id);
+            }
+        }
+
+        SketchAction::DeleteFeature { feature_id } => {
+            let mut state = ctx.app_state.lock();
+
+            // Remove the feature from history
+            if state.cad.data.history.remove_feature(feature_id).is_some() {
+                info!("Deleted feature: {}", feature_id);
+                state.modified = true;
+
+                // Rebuild geometry after feature deletion
+                if let Err(e) = state.cad.data.history.rebuild(ctx.kernel.as_ref()) {
+                    tracing::error!("Failed to rebuild after feature deletion: {}", e);
+                } else {
+                    info!("Rebuild complete after feature deletion");
+
+                    // Sync CAD bodies to renderer
+                    if let Some(viewport_state) = ctx.viewport_state.as_ref() {
+                        let mut vp = viewport_state.lock();
+                        let device = vp.device.clone();
+                        vp.renderer.clear_cad_bodies();
+
+                        for (body_id, body) in state.cad.data.history.bodies() {
+                            if let Some(ref solid) = body.solid {
+                                match ctx.kernel.tessellate(solid, 0.1) {
+                                    Ok(mesh) => {
+                                        let transform = glam::Mat4::IDENTITY;
+                                        let color = [0.7, 0.7, 0.8, 1.0];
+                                        vp.renderer.add_cad_body(
+                                            &device,
+                                            *body_id,
+                                            &mesh.vertices,
+                                            &mesh.normals,
+                                            &mesh.indices,
+                                            transform,
+                                            color,
+                                        );
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!(
+                                            "Failed to tessellate body {}: {}",
+                                            body_id,
+                                            e
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                tracing::warn!("Feature not found for deletion: {}", feature_id);
+            }
+        }
+
+        SketchAction::ToggleFeatureSuppression { feature_id } => {
+            let mut state = ctx.app_state.lock();
+
+            // Toggle suppression state
+            if let Some(feature) = state.cad.data.history.get_by_id_mut(feature_id) {
+                let new_state = !feature.is_suppressed();
+                feature.set_suppressed(new_state);
+                info!(
+                    "Toggled feature {} suppression to {}",
+                    feature_id, new_state
+                );
+                state.modified = true;
+
+                // Rebuild geometry after suppression change
+                if let Err(e) = state.cad.data.history.rebuild(ctx.kernel.as_ref()) {
+                    tracing::error!("Failed to rebuild after suppression toggle: {}", e);
+                } else {
+                    info!("Rebuild complete after suppression toggle");
+
+                    // Sync CAD bodies to renderer
+                    if let Some(viewport_state) = ctx.viewport_state.as_ref() {
+                        let mut vp = viewport_state.lock();
+                        let device = vp.device.clone();
+                        vp.renderer.clear_cad_bodies();
+
+                        for (body_id, body) in state.cad.data.history.bodies() {
+                            if let Some(ref solid) = body.solid {
+                                match ctx.kernel.tessellate(solid, 0.1) {
+                                    Ok(mesh) => {
+                                        let transform = glam::Mat4::IDENTITY;
+                                        let color = [0.7, 0.7, 0.8, 1.0];
+                                        vp.renderer.add_cad_body(
+                                            &device,
+                                            *body_id,
+                                            &mesh.vertices,
+                                            &mesh.normals,
+                                            &mesh.indices,
+                                            transform,
+                                            color,
+                                        );
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!(
+                                            "Failed to tessellate body {}: {}",
+                                            body_id,
+                                            e
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                tracing::warn!("Feature not found for suppression toggle: {}", feature_id);
+            }
+        }
     }
 }
 

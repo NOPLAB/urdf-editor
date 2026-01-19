@@ -207,7 +207,9 @@ impl Panel for FeatureTreePanel {
                                         ui.close();
                                     }
                                     if ui.button("Delete").clicked() {
-                                        // TODO: Delete sketch
+                                        app_state.lock().queue_action(AppAction::SketchAction(
+                                            SketchAction::DeleteSketch { sketch_id },
+                                        ));
                                         ui.close();
                                     }
                                 });
@@ -240,9 +242,12 @@ impl Panel for FeatureTreePanel {
                                 }
 
                                 // Context menu
+                                let feature_id = feature.id;
                                 response.context_menu(|ui| {
+                                    // Edit functionality - for now just select the feature
+                                    // TODO: Implement feature parameter editing dialog
                                     if ui.button("Edit").clicked() {
-                                        // TODO: Edit feature
+                                        self.selected = Some(TreeItem::Feature(feature_id));
                                         ui.close();
                                     }
                                     if ui
@@ -253,11 +258,15 @@ impl Panel for FeatureTreePanel {
                                         })
                                         .clicked()
                                     {
-                                        // TODO: Toggle suppression
+                                        app_state.lock().queue_action(AppAction::SketchAction(
+                                            SketchAction::ToggleFeatureSuppression { feature_id },
+                                        ));
                                         ui.close();
                                     }
                                     if ui.button("Delete").clicked() {
-                                        // TODO: Delete feature
+                                        app_state.lock().queue_action(AppAction::SketchAction(
+                                            SketchAction::DeleteFeature { feature_id },
+                                        ));
                                         ui.close();
                                     }
                                 });

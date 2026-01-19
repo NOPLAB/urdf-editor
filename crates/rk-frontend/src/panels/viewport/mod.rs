@@ -1003,20 +1003,15 @@ impl Panel for ViewportPanel {
                 if let Some(sketch_state) = app.cad.editor_mode.sketch() {
                     if sketch_state.extrude_dialog.open {
                         if let Some(ref preview_mesh) = sketch_state.extrude_dialog.preview_mesh {
-                            // Get the sketch plane transform
-                            let sketch_id = sketch_state.extrude_dialog.sketch_id;
-                            let transform = app
-                                .cad
-                                .get_sketch(sketch_id)
-                                .map(|s| s.plane.transform())
-                                .unwrap_or(Mat4::IDENTITY);
-
+                            // The preview mesh is already in world coordinates
+                            // (kernel.extrude transforms profile using plane origin/axes)
+                            // so we use identity transform here
                             vp_state.renderer.set_preview_mesh(
                                 &device,
                                 &preview_mesh.vertices,
                                 &preview_mesh.normals,
                                 &preview_mesh.indices,
-                                transform,
+                                Mat4::IDENTITY,
                             );
                         } else {
                             vp_state.renderer.clear_preview_mesh();

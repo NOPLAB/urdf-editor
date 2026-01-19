@@ -128,7 +128,10 @@ impl ConstraintSolver {
             let j = self.compute_jacobian(sketch, &var_map, &x);
 
             // Solve J * dx = -f using least squares
-            match self.solve_linear_system(&j, &f, n_vars, n_equations) {
+            // Use actual error count (f.len()) as some constraints may not produce
+            // equations when their referenced entities are missing
+            let actual_equations = f.len();
+            match self.solve_linear_system(&j, &f, n_vars, actual_equations) {
                 Some(dx) => {
                     // Apply damped update
                     for i in 0..n_vars {

@@ -11,9 +11,9 @@ use std::path::Path;
 
 use crate::part::Part;
 
-pub use dae::{load_dae, load_dae_with_unit};
+pub use dae::{load_dae, load_dae_from_bytes, load_dae_with_unit};
 pub use normals::{calculate_face_normals, calculate_triangle_normal};
-pub use obj::{load_obj, load_obj_with_unit};
+pub use obj::{load_obj, load_obj_from_bytes, load_obj_with_unit};
 #[cfg(feature = "cad")]
 pub use step::{StepLoadOptions, load_step, load_step_with_options};
 pub use stl::{StlError, StlUnit, load_stl, load_stl_from_bytes, load_stl_with_unit, save_stl};

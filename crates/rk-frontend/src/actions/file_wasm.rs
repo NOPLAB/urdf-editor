@@ -1,6 +1,8 @@
 //! WASM file I/O action handlers
 
-use rk_core::{Project, load_stl_from_bytes};
+use rk_core::{
+    Part, Project, StlUnit, load_dae_from_bytes, load_obj_from_bytes, load_stl_from_bytes,
+};
 
 use crate::state::AppAction;
 
@@ -15,9 +17,49 @@ pub fn handle_file_action_wasm(action: AppAction, ctx: &ActionContext) {
     }
 }
 
-fn handle_import_mesh_bytes(name: &str, data: &[u8], ctx: &ActionContext) {
+/// Detect mesh format from filename extension
+fn detect_mesh_format(filename: &str) -> Option<&'static str> {
+    let lower = filename.to_lowercase();
+    if lower.ends_with(".stl") {
+        Some("stl")
+    } else if lower.ends_with(".obj") {
+        Some("obj")
+    } else if lower.ends_with(".dae") {
+        Some("dae")
+    } else {
+        None
+    }
+}
+
+/// Extract part name from filename (removes extension)
+fn extract_part_name(filename: &str) -> String {
+    // Find the last dot and remove extension
+    if let Some(pos) = filename.rfind('.') {
+        filename[..pos].to_string()
+    } else {
+        filename.to_string()
+    }
+}
+
+/// Load mesh from bytes based on format
+fn load_mesh_from_bytes(filename: &str, data: &[u8], unit: StlUnit) -> Result<Part, String> {
+    let part_name = extract_part_name(filename);
+    let format = detect_mesh_format(filename);
+
+    match format {
+        Some("stl") => load_stl_from_bytes(&part_name, data, unit)
+            .map_err(|e| format!("STL load error: {}", e)),
+        Some("obj") => load_obj_from_bytes(&part_name, data, unit)
+            .map_err(|e| format!("OBJ load error: {}", e)),
+        Some("dae") => load_dae_from_bytes(&part_name, data, unit)
+            .map_err(|e| format!("DAE load error: {}", e)),
+        _ => Err(format!("Unsupported mesh format: {}", filename)),
+    }
+}
+
+fn handle_import_mesh_bytes(filename: &str, data: &[u8], ctx: &ActionContext) {
     let unit = ctx.app_state.lock().stl_import_unit;
-    match load_stl_from_bytes(name, data, unit) {
+    match load_mesh_from_bytes(filename, data, unit) {
         Ok(part) => {
             tracing::info!(
                 "Loaded mesh from bytes: {} ({} vertices, unit={:?})",

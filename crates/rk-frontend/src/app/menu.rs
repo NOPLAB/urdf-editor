@@ -171,16 +171,46 @@ pub fn render_menu_bar(ctx: &egui::Context, app_state: &SharedAppState) -> Optio
                                     .pick_file()
                                     .await
                                 {
-                                    let name = file.file_name();
-                                    // Remove .stl extension for part name
-                                    let part_name = name
-                                        .strip_suffix(".stl")
-                                        .or_else(|| name.strip_suffix(".STL"))
-                                        .unwrap_or(&name)
-                                        .to_string();
+                                    let filename = file.file_name();
                                     let data = file.read().await;
                                     app_state.lock().queue_action(AppAction::ImportMeshBytes {
-                                        name: part_name,
+                                        name: filename,
+                                        data,
+                                    });
+                                }
+                            });
+                            ui.close();
+                        }
+                        if ui.button("OBJ...").clicked() {
+                            let app_state = app_state.clone();
+                            wasm_bindgen_futures::spawn_local(async move {
+                                if let Some(file) = rfd::AsyncFileDialog::new()
+                                    .add_filter("OBJ files", &["obj", "OBJ"])
+                                    .pick_file()
+                                    .await
+                                {
+                                    let filename = file.file_name();
+                                    let data = file.read().await;
+                                    app_state.lock().queue_action(AppAction::ImportMeshBytes {
+                                        name: filename,
+                                        data,
+                                    });
+                                }
+                            });
+                            ui.close();
+                        }
+                        if ui.button("DAE (COLLADA)...").clicked() {
+                            let app_state = app_state.clone();
+                            wasm_bindgen_futures::spawn_local(async move {
+                                if let Some(file) = rfd::AsyncFileDialog::new()
+                                    .add_filter("DAE files", &["dae", "DAE"])
+                                    .pick_file()
+                                    .await
+                                {
+                                    let filename = file.file_name();
+                                    let data = file.read().await;
+                                    app_state.lock().queue_action(AppAction::ImportMeshBytes {
+                                        name: filename,
                                         data,
                                     });
                                 }

@@ -42,7 +42,7 @@ pub enum AppAction {
     NewProject,
 
     // File actions (bytes-based, for WASM)
-    /// Import a mesh from bytes (STL format only for now)
+    /// Import a mesh from bytes (STL, OBJ, DAE - format detected from filename)
     ImportMeshBytes { name: String, data: Vec<u8> },
     /// Load project from bytes
     LoadProjectBytes { name: String, data: Vec<u8> },

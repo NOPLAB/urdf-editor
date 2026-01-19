@@ -109,6 +109,9 @@ pub struct Renderer {
     // Preview mesh for extrude preview
     preview_mesh: Option<MeshEntry>,
 
+    // CAD bodies for persistent display
+    cad_bodies: HashMap<Uuid, MeshEntry>,
+
     // Display options
     show_grid: bool,
     show_axes: bool,
@@ -317,6 +320,7 @@ impl Renderer {
             meshes: HashMap::new(),
             selected_part: None,
             preview_mesh: None,
+            cad_bodies: HashMap::new(),
             show_grid: true,
             show_axes: true,
             show_markers: true,
@@ -700,6 +704,53 @@ impl Renderer {
         self.preview_mesh.is_some()
     }
 
+    // ========== CAD body methods ==========
+
+    /// Add a CAD body mesh for persistent display.
+    ///
+    /// CAD bodies are rendered like regular parts, but managed separately.
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_cad_body(
+        &mut self,
+        device: &wgpu::Device,
+        body_id: Uuid,
+        vertices: &[[f32; 3]],
+        normals: &[[f32; 3]],
+        indices: &[u32],
+        transform: Mat4,
+        color: [f32; 4],
+    ) {
+        let data = MeshData::from_arrays(device, vertices, normals, indices, transform, color);
+        let bind_group = self.mesh_renderer.create_instance_bind_group(device, &data);
+        self.cad_bodies
+            .insert(body_id, MeshEntry { data, bind_group });
+        tracing::info!(
+            "Added CAD body: {}. Total CAD bodies: {}",
+            body_id,
+            self.cad_bodies.len()
+        );
+    }
+
+    /// Remove a CAD body.
+    pub fn remove_cad_body(&mut self, body_id: Uuid) {
+        self.cad_bodies.remove(&body_id);
+    }
+
+    /// Clear all CAD bodies.
+    pub fn clear_cad_bodies(&mut self) {
+        self.cad_bodies.clear();
+    }
+
+    /// Check if a CAD body exists.
+    pub fn has_cad_body(&self, body_id: Uuid) -> bool {
+        self.cad_bodies.contains_key(&body_id)
+    }
+
+    /// Get the number of CAD bodies.
+    pub fn cad_body_count(&self) -> usize {
+        self.cad_bodies.len()
+    }
+
     /// Update axis display
     pub fn update_axes(&mut self, queue: &wgpu::Queue, instances: &[AxisInstance]) {
         self.axis_renderer.update_instances(queue, instances);
@@ -861,7 +912,7 @@ impl Renderer {
 
         // === SHADOW PASS ===
         // Render scene from light's perspective to generate shadow map
-        if self.light.shadows_enabled && !self.meshes.is_empty() {
+        if self.light.shadows_enabled && (!self.meshes.is_empty() || !self.cad_bodies.is_empty()) {
             let mut shadow_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Shadow Pass"),
                 color_attachments: &[],
@@ -887,6 +938,16 @@ impl Renderer {
             );
 
             for entry in self.meshes.values() {
+                self.mesh_renderer.render_shadow(
+                    &mut shadow_pass,
+                    &entry.data,
+                    &entry.bind_group,
+                    &self.shadow_light_bind_group,
+                );
+            }
+
+            // Shadow pass for CAD bodies
+            for entry in self.cad_bodies.values() {
                 self.mesh_renderer.render_shadow(
                     &mut shadow_pass,
                     &entry.data,
@@ -944,6 +1005,16 @@ impl Renderer {
 
         // Render meshes with lighting and shadows
         for entry in self.meshes.values() {
+            self.mesh_renderer.render(
+                &mut render_pass,
+                &entry.data,
+                &entry.bind_group,
+                &self.light_bind_group,
+            );
+        }
+
+        // Render CAD bodies with lighting and shadows
+        for entry in self.cad_bodies.values() {
             self.mesh_renderer.render(
                 &mut render_pass,
                 &entry.data,

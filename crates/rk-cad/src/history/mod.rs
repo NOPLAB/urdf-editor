@@ -188,6 +188,11 @@ impl FeatureHistory {
         &self.bodies
     }
 
+    /// Get mutable access to all bodies
+    pub fn bodies_mut(&mut self) -> &mut HashMap<Uuid, CadBody> {
+        &mut self.bodies
+    }
+
     // ============== Rollback ==============
 
     /// Roll back to a specific feature (features after it are hidden)

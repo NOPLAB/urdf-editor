@@ -319,6 +319,28 @@ impl Feature {
         }
     }
 
+    /// Create a new extrude feature with boolean operation
+    pub fn extrude_with_boolean(
+        name: impl Into<String>,
+        sketch_id: Uuid,
+        distance: f32,
+        direction: ExtrudeDirection,
+        boolean_op: BooleanOp,
+        target_body: Option<Uuid>,
+    ) -> Self {
+        Feature::Extrude {
+            id: Uuid::new_v4(),
+            name: name.into(),
+            sketch_id,
+            distance,
+            direction,
+            boolean_op,
+            target_body,
+            draft_angle: 0.0,
+            suppressed: false,
+        }
+    }
+
     /// Create a new revolve feature
     pub fn revolve(name: impl Into<String>, sketch_id: Uuid, axis: Axis3D, angle: f32) -> Self {
         Feature::Revolve {

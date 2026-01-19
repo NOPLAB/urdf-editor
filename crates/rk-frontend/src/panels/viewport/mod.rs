@@ -14,8 +14,8 @@ use crate::state::{
 };
 
 use camera_overlay::{
-    render_axes_indicator, render_camera_settings, render_extrude_dialog, render_gizmo_toggle,
-    render_plane_selection_hint, render_sketch_toolbar,
+    render_axes_indicator, render_camera_settings, render_dimension_dialog, render_extrude_dialog,
+    render_gizmo_toggle, render_plane_selection_hint, render_sketch_toolbar,
 };
 
 /// Colors for sketch rendering
@@ -302,6 +302,87 @@ fn screen_to_sketch_coords(
     Some(sketch_plane.to_local(hit_3d))
 }
 
+/// Pick a sketch entity from sketch coordinates.
+/// Returns the closest entity to the point within the pick radius.
+fn pick_sketch_entity(sketch: &Sketch, sketch_pos: Vec2, pick_radius: f32) -> Option<uuid::Uuid> {
+    use std::collections::HashMap;
+
+    // Collect point positions for line/arc/circle distance calculations
+    let point_positions: HashMap<uuid::Uuid, Vec2> = sketch
+        .entities()
+        .values()
+        .filter_map(|e| {
+            if let SketchEntity::Point { id, position } = e {
+                Some((*id, *position))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    let mut closest: Option<(uuid::Uuid, f32)> = None;
+
+    for entity in sketch.entities().values() {
+        let dist = entity_distance(entity, sketch_pos, &point_positions);
+        if dist < pick_radius && (closest.is_none() || dist < closest.unwrap().1) {
+            closest = Some((entity.id(), dist));
+        }
+    }
+
+    closest.map(|(id, _)| id)
+}
+
+/// Calculate distance from a point to an entity
+fn entity_distance(
+    entity: &SketchEntity,
+    point: Vec2,
+    point_positions: &std::collections::HashMap<uuid::Uuid, Vec2>,
+) -> f32 {
+    match entity {
+        SketchEntity::Point { position, .. } => (*position - point).length(),
+        SketchEntity::Line { start, end, .. } => {
+            if let (Some(&start_pos), Some(&end_pos)) =
+                (point_positions.get(start), point_positions.get(end))
+            {
+                point_to_line_distance(point, start_pos, end_pos)
+            } else {
+                f32::INFINITY
+            }
+        }
+        SketchEntity::Circle { center, radius, .. } => {
+            if let Some(&center_pos) = point_positions.get(center) {
+                ((center_pos - point).length() - radius).abs()
+            } else {
+                f32::INFINITY
+            }
+        }
+        SketchEntity::Arc { center, radius, .. } => {
+            if let Some(&center_pos) = point_positions.get(center) {
+                // Simplified: just use radial distance
+                ((center_pos - point).length() - radius).abs()
+            } else {
+                f32::INFINITY
+            }
+        }
+        // Ellipse and Spline not yet supported for picking
+        SketchEntity::Ellipse { .. } | SketchEntity::Spline { .. } => f32::INFINITY,
+    }
+}
+
+/// Calculate distance from a point to a line segment
+fn point_to_line_distance(point: Vec2, line_start: Vec2, line_end: Vec2) -> f32 {
+    let line = line_end - line_start;
+    let len_sq = line.length_squared();
+
+    if len_sq < 1e-10 {
+        return (point - line_start).length();
+    }
+
+    let t = ((point - line_start).dot(line) / len_sq).clamp(0.0, 1.0);
+    let projection = line_start + line * t;
+    (point - projection).length()
+}
+
 use crate::state::ViewportState;
 
 /// Handle sketch mode mouse input.
@@ -457,6 +538,15 @@ fn handle_sketch_mode_input(
             SketchTool::Select => {
                 // TODO: Implement entity selection
                 return false;
+            }
+            tool if tool.is_constraint() || tool.is_dimension() => {
+                // Handle constraint tool clicks
+                return handle_constraint_tool_click(
+                    app_state,
+                    snapped_pos,
+                    active_sketch_id,
+                    tool,
+                );
             }
             _ => {
                 // Other tools not yet implemented
@@ -646,6 +736,88 @@ fn handle_circle_tool_click(app_state: &SharedAppState, snapped_pos: Vec2) -> bo
         true
     } else {
         false
+    }
+}
+
+/// Handle constraint tool click.
+/// Picks entity at click position and queues SelectEntityForConstraint action.
+fn handle_constraint_tool_click(
+    app_state: &SharedAppState,
+    sketch_pos: Vec2,
+    sketch_id: uuid::Uuid,
+    tool: SketchTool,
+) -> bool {
+    // Get sketch for entity picking
+    let sketch = {
+        let app = app_state.lock();
+        app.cad.get_sketch(sketch_id).cloned()
+    };
+
+    let Some(sketch) = sketch else {
+        return false;
+    };
+
+    // Pick entity at click position (use 0.5 units as pick radius)
+    let picked_entity = pick_sketch_entity(&sketch, sketch_pos, 0.5);
+
+    let Some(entity_id) = picked_entity else {
+        return false;
+    };
+
+    // Check if entity type is valid for the constraint tool
+    let entity = sketch.get_entity(entity_id);
+    if !is_valid_entity_for_tool(entity, tool) {
+        return false;
+    }
+
+    // Queue the action to process the entity selection
+    app_state.lock().queue_action(AppAction::SketchAction(
+        SketchAction::SelectEntityForConstraint { entity_id },
+    ));
+
+    true
+}
+
+/// Check if an entity type is valid for a constraint tool
+fn is_valid_entity_for_tool(entity: Option<&SketchEntity>, tool: SketchTool) -> bool {
+    let Some(entity) = entity else {
+        return false;
+    };
+
+    match tool {
+        SketchTool::ConstrainCoincident => matches!(entity, SketchEntity::Point { .. }),
+        SketchTool::ConstrainHorizontal | SketchTool::ConstrainVertical => {
+            matches!(entity, SketchEntity::Line { .. })
+        }
+        SketchTool::ConstrainParallel | SketchTool::ConstrainPerpendicular => {
+            matches!(entity, SketchEntity::Line { .. })
+        }
+        SketchTool::ConstrainTangent => {
+            matches!(
+                entity,
+                SketchEntity::Line { .. } | SketchEntity::Circle { .. } | SketchEntity::Arc { .. }
+            )
+        }
+        SketchTool::ConstrainEqual => {
+            matches!(
+                entity,
+                SketchEntity::Line { .. } | SketchEntity::Circle { .. }
+            )
+        }
+        SketchTool::ConstrainFixed => matches!(entity, SketchEntity::Point { .. }),
+        SketchTool::DimensionDistance
+        | SketchTool::DimensionHorizontal
+        | SketchTool::DimensionVertical => {
+            matches!(entity, SketchEntity::Point { .. })
+        }
+        SketchTool::DimensionAngle => matches!(entity, SketchEntity::Line { .. }),
+        SketchTool::DimensionRadius => {
+            matches!(
+                entity,
+                SketchEntity::Circle { .. } | SketchEntity::Arc { .. }
+            )
+        }
+        _ => false,
     }
 }
 
@@ -1273,12 +1445,18 @@ impl Panel for ViewportPanel {
             if let Some(sketch_state) = app.cad.editor_mode.sketch() {
                 let current_tool = sketch_state.current_tool;
                 let extrude_dialog_open = sketch_state.extrude_dialog.open;
+                let dimension_dialog_open = sketch_state.dimension_dialog.open;
                 drop(app); // Release lock before calling render
                 render_sketch_toolbar(ui, response.rect, app_state, current_tool);
 
                 // Draw extrude dialog if open
                 if extrude_dialog_open {
                     render_extrude_dialog(ui, response.rect, app_state);
+                }
+
+                // Draw dimension dialog if open
+                if dimension_dialog_open {
+                    render_dimension_dialog(ui, response.rect, app_state);
                 }
             }
         }

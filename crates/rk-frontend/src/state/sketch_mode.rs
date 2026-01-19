@@ -4,7 +4,8 @@ use glam::{Vec2, Vec3};
 use uuid::Uuid;
 
 use rk_cad::{
-    CadData, Sketch, SketchConstraint, SketchEntity, SketchPlane, TessellatedMesh, Wire2D,
+    BooleanOp, CadData, Sketch, SketchConstraint, SketchEntity, SketchPlane, TessellatedMesh,
+    Wire2D,
 };
 
 /// Reference plane types for sketch creation
@@ -250,6 +251,16 @@ pub enum InProgressEntity {
     },
 }
 
+/// State for constraint tool selection workflow
+#[derive(Debug, Clone, Default)]
+pub enum ConstraintToolState {
+    /// Waiting for first entity selection
+    #[default]
+    WaitingForFirst,
+    /// First entity selected, waiting for second (if needed)
+    WaitingForSecond { first_entity: Uuid },
+}
+
 /// Direction for extrusion
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ExtrudeDirection {
@@ -301,6 +312,12 @@ pub struct ExtrudeDialogState {
     pub preview_mesh: Option<TessellatedMesh>,
     /// Error message if preview generation failed
     pub error_message: Option<String>,
+    /// Boolean operation type
+    pub boolean_op: BooleanOp,
+    /// Target body for boolean operations (None for New)
+    pub target_body: Option<Uuid>,
+    /// Available bodies for boolean operations (id, name)
+    pub available_bodies: Vec<(Uuid, String)>,
 }
 
 impl Default for ExtrudeDialogState {
@@ -314,6 +331,9 @@ impl Default for ExtrudeDialogState {
             selected_profile_index: 0,
             preview_mesh: None,
             error_message: None,
+            boolean_op: BooleanOp::New,
+            target_body: None,
+            available_bodies: Vec::new(),
         }
     }
 }
@@ -329,6 +349,9 @@ impl ExtrudeDialogState {
         self.selected_profile_index = 0;
         self.preview_mesh = None;
         self.error_message = None;
+        self.boolean_op = BooleanOp::New;
+        self.target_body = None;
+        self.available_bodies = Vec::new();
     }
 
     /// Set the profiles extracted from the sketch
@@ -358,6 +381,44 @@ impl ExtrudeDialogState {
     }
 }
 
+/// State for the dimension input dialog
+#[derive(Debug, Clone, Default)]
+pub struct DimensionDialogState {
+    /// Whether the dialog is open
+    pub open: bool,
+    /// The constraint tool being used
+    pub tool: Option<SketchTool>,
+    /// Selected entity IDs
+    pub entities: Vec<Uuid>,
+    /// The dimension value
+    pub value: f32,
+    /// Input field text (for editing)
+    pub value_text: String,
+}
+
+impl DimensionDialogState {
+    /// Open the dialog for a dimension constraint
+    pub fn open_for_constraint(
+        &mut self,
+        tool: SketchTool,
+        entities: Vec<Uuid>,
+        initial_value: f32,
+    ) {
+        self.open = true;
+        self.tool = Some(tool);
+        self.entities = entities;
+        self.value = initial_value;
+        self.value_text = format!("{:.2}", initial_value);
+    }
+
+    /// Close the dialog
+    pub fn close(&mut self) {
+        self.open = false;
+        self.tool = None;
+        self.entities.clear();
+    }
+}
+
 /// Sketch editing mode state
 #[derive(Debug, Clone)]
 pub struct SketchModeState {
@@ -377,6 +438,10 @@ pub struct SketchModeState {
     pub grid_spacing: f32,
     /// Extrude dialog state
     pub extrude_dialog: ExtrudeDialogState,
+    /// State for constraint tool selection workflow
+    pub constraint_tool_state: Option<ConstraintToolState>,
+    /// Dimension input dialog state
+    pub dimension_dialog: DimensionDialogState,
 }
 
 impl Default for SketchModeState {
@@ -387,9 +452,11 @@ impl Default for SketchModeState {
             in_progress: None,
             selected_entities: Vec::new(),
             hovered_entity: None,
-            snap_to_grid: true,
+            snap_to_grid: false,
             grid_spacing: 1.0,
             extrude_dialog: ExtrudeDialogState::default(),
+            constraint_tool_state: None,
+            dimension_dialog: DimensionDialogState::default(),
         }
     }
 }
@@ -543,12 +610,32 @@ pub enum SketchAction {
     UpdateExtrudeDistance { distance: f32 },
     /// Update extrude dialog direction
     UpdateExtrudeDirection { direction: ExtrudeDirection },
+    /// Update extrude dialog boolean operation
+    UpdateExtrudeBooleanOp { boolean_op: BooleanOp },
+    /// Update extrude dialog target body
+    UpdateExtrudeTargetBody { target_body: Option<Uuid> },
     /// Select a profile in the extrude dialog
     SelectExtrudeProfile { profile_index: usize },
     /// Cancel the extrude dialog
     CancelExtrudeDialog,
     /// Execute the extrusion with current dialog settings
     ExecuteExtrude,
+    /// Select an entity for constraint tool
+    SelectEntityForConstraint { entity_id: Uuid },
+    /// Cancel constraint tool selection
+    CancelConstraintSelection,
+    /// Show dimension input dialog
+    ShowDimensionDialog {
+        tool: SketchTool,
+        entities: Vec<Uuid>,
+        initial_value: f32,
+    },
+    /// Update dimension dialog value
+    UpdateDimensionValue { value: f32 },
+    /// Confirm dimension and add constraint
+    ConfirmDimensionConstraint,
+    /// Cancel dimension dialog
+    CancelDimensionDialog,
 }
 
 /// Extended CAD state for the application

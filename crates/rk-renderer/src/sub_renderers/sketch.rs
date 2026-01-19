@@ -125,10 +125,45 @@ impl SketchRenderData {
         }
     }
 
-    /// Add a point to the sketch.
+    /// Half-size of point quad in sketch units
+    const POINT_HALF_SIZE: f32 = 0.08;
+
+    /// Add a point to the sketch (as a quad for visibility).
     pub fn add_point(&mut self, position: Vec2, color: Vec4, flags: u32) {
+        let hs = Self::POINT_HALF_SIZE;
+        let p = position;
+
+        // Create two triangles forming a quad (CCW winding)
+        // Triangle 1: bottom-left, bottom-right, top-right
         self.point_vertices.push(SketchVertex::new(
-            Vec3::new(position.x, position.y, 0.0),
+            Vec3::new(p.x - hs, p.y - hs, 0.0),
+            color,
+            flags,
+        ));
+        self.point_vertices.push(SketchVertex::new(
+            Vec3::new(p.x + hs, p.y - hs, 0.0),
+            color,
+            flags,
+        ));
+        self.point_vertices.push(SketchVertex::new(
+            Vec3::new(p.x + hs, p.y + hs, 0.0),
+            color,
+            flags,
+        ));
+
+        // Triangle 2: bottom-left, top-right, top-left
+        self.point_vertices.push(SketchVertex::new(
+            Vec3::new(p.x - hs, p.y - hs, 0.0),
+            color,
+            flags,
+        ));
+        self.point_vertices.push(SketchVertex::new(
+            Vec3::new(p.x + hs, p.y + hs, 0.0),
+            color,
+            flags,
+        ));
+        self.point_vertices.push(SketchVertex::new(
+            Vec3::new(p.x - hs, p.y + hs, 0.0),
             color,
             flags,
         ));
@@ -285,7 +320,7 @@ impl SketchRenderer {
         .with_depth_write(false)
         .build(device);
 
-        // Create point pipeline (using same shader but different topology)
+        // Create point pipeline (using triangles to draw square points)
         let point_pipeline = PipelineConfig::new(
             "Sketch Points",
             include_str!("../shaders/sketch.wgsl"),
@@ -294,7 +329,7 @@ impl SketchRenderer {
             &[camera_bind_group_layout, &sketch_bind_group_layout],
         )
         .with_vertex_layouts(vec![SketchVertex::layout()])
-        .with_topology(wgpu::PrimitiveTopology::PointList)
+        .with_topology(wgpu::PrimitiveTopology::TriangleList)
         .with_blend(wgpu::BlendState::ALPHA_BLENDING)
         .with_depth_write(false)
         .with_entry_point("vs_point", "fs_point")
@@ -494,7 +529,7 @@ impl SubRenderer for SketchRenderer {
         .with_depth_write(false)
         .build(ctx.device());
 
-        // Create point pipeline (using same shader but different topology)
+        // Create point pipeline (using triangles to draw square points)
         let point_pipeline = PipelineConfig::new(
             "Sketch Points",
             include_str!("../shaders/sketch.wgsl"),
@@ -503,7 +538,7 @@ impl SubRenderer for SketchRenderer {
             &[ctx.camera_bind_group_layout(), &sketch_bind_group_layout],
         )
         .with_vertex_layouts(vec![SketchVertex::layout()])
-        .with_topology(wgpu::PrimitiveTopology::PointList)
+        .with_topology(wgpu::PrimitiveTopology::TriangleList)
         .with_blend(wgpu::BlendState::ALPHA_BLENDING)
         .with_depth_write(false)
         .with_entry_point("vs_point", "fs_point")

@@ -783,8 +783,8 @@ fn handle_constraint_tool_click(
         return false;
     };
 
-    // Pick entity at click position (use 0.5 units as pick radius)
-    let picked_entity = pick_sketch_entity(&sketch, sketch_pos, 0.5);
+    // Pick entity at click position (use 0.8 units as pick radius for easier selection)
+    let picked_entity = pick_sketch_entity(&sketch, sketch_pos, 0.8);
 
     let Some(entity_id) = picked_entity else {
         return false;

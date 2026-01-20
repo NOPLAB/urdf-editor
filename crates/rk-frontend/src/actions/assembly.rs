@@ -242,91 +242,22 @@ fn handle_set_editing_joint(joint_id: Option<Uuid>, ctx: &ActionContext) {
 
 /// Sync renderer transforms with assembly world transforms
 fn sync_renderer_transforms(state: &AppState, ctx: &ActionContext) {
-    use glam::{Mat4, Quat, Vec3};
-
     if let Some(viewport_state) = ctx.viewport_state {
         let mut vp = viewport_state.lock();
 
-        // For each part, collect all ancestor joints and their properties
-        // Then apply transforms while updating pivot positions and axes
-        for (link_id, link) in &state.project.assembly.links {
+        // Use the pre-calculated world transforms from Assembly
+        // These are computed by update_world_transforms_with_current_positions()
+        // which correctly applies joint.origin and joint motion transforms
+        for link in state.project.assembly.links.values() {
             if let Some(part_id) = link.part_id
                 && let Some(part) = state.get_part(part_id)
             {
-                // Collect ancestor joints from this link to root
-                // Store: (original_pivot, original_axis, joint_type, joint_value)
-                let mut joint_chain: Vec<(Vec3, Vec3, rk_core::JointType, f32)> = Vec::new();
-                let mut current_link_id = *link_id;
-
-                while let Some((joint_id, parent_link_id)) =
-                    state.project.assembly.parent.get(&current_link_id)
-                {
-                    if let Some(joint) = state.project.assembly.joints.get(joint_id) {
-                        let joint_pos = state.project.assembly.get_joint_position(*joint_id);
-
-                        // Get parent part's center as original joint pivot point
-                        let original_pivot = get_part_center(state, *parent_link_id);
-
-                        joint_chain.push((original_pivot, joint.axis, joint.joint_type, joint_pos));
-                    }
-                    current_link_id = *parent_link_id;
-                }
-
-                // Apply transforms from root to leaf (reverse the chain)
-                joint_chain.reverse();
-
-                // Track accumulated transform and rotation to update pivot positions and axes
-                let mut accumulated_transform = Mat4::IDENTITY;
-                let mut accumulated_rotation = Quat::IDENTITY;
-
-                // Apply each joint's rotation around its transformed pivot with transformed axis
-                for (original_pivot, original_axis, joint_type, joint_value) in &joint_chain {
-                    // Transform the pivot and axis by all previous joint transforms
-                    let current_pivot = accumulated_transform.transform_point3(*original_pivot);
-                    let current_axis = accumulated_rotation * *original_axis;
-
-                    // Compute joint rotation with transformed axis
-                    let joint_rotation = rk_core::Assembly::compute_joint_transform(
-                        joint_type,
-                        current_axis,
-                        *joint_value,
-                    );
-
-                    // Extract rotation part for axis transformation
-                    let (_, rot, _) = joint_rotation.to_scale_rotation_translation();
-                    accumulated_rotation = rot * accumulated_rotation;
-
-                    // Create rotation around the current pivot
-                    let to_pivot = Mat4::from_translation(-current_pivot);
-                    let from_pivot = Mat4::from_translation(current_pivot);
-                    let this_transform = from_pivot * joint_rotation * to_pivot;
-
-                    // Accumulate the transform
-                    accumulated_transform = this_transform * accumulated_transform;
-                }
-
-                // Apply accumulated transform to the part's original transform
-                let result = accumulated_transform * part.origin_transform;
+                // Apply link's world transform and part's local origin transform
+                let result = link.world_transform * part.origin_transform;
                 vp.update_part_transform(part_id, result);
             }
         }
     }
-}
-
-/// Get the world-space center of a part associated with a link
-fn get_part_center(state: &AppState, link_id: Uuid) -> glam::Vec3 {
-    if let Some(link) = state.project.assembly.links.get(&link_id)
-        && let Some(part_id) = link.part_id
-        && let Some(part) = state.get_part(part_id)
-    {
-        let center = glam::Vec3::new(
-            (part.bbox_min[0] + part.bbox_max[0]) / 2.0,
-            (part.bbox_min[1] + part.bbox_max[1]) / 2.0,
-            (part.bbox_min[2] + part.bbox_max[2]) / 2.0,
-        );
-        return part.origin_transform.transform_point3(center);
-    }
-    glam::Vec3::ZERO
 }
 
 // ========== Collision action handlers ==========

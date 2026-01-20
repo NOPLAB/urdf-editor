@@ -3,9 +3,12 @@
 use std::sync::Arc;
 
 use glam::{Mat4, Vec3};
+use uuid::Uuid;
 
-use rk_core::Part;
-use rk_renderer::{GizmoAxis, GizmoMode, Renderer, axis::AxisInstance};
+use rk_core::{GeometryType, Part, assembly::Link};
+use rk_renderer::{
+    GizmoAxis, GizmoMode, Renderer, axis::AxisInstance, constants::collision as collision_constants,
+};
 
 use super::{GizmoInteraction, GizmoTransform};
 
@@ -175,6 +178,61 @@ impl ViewportState {
         self.gizmo.part_id = None;
         self.gizmo.editing_collision = None;
         self.gizmo.editing_joint = None;
+    }
+
+    /// Update collision instances from assembly links
+    ///
+    /// # Arguments
+    /// * `links` - Iterator over (link_id, link) pairs
+    /// * `selected_collision` - Currently selected collision (link_id, collision_index)
+    pub fn update_collisions<'a>(
+        &mut self,
+        links: impl Iterator<Item = (&'a Uuid, &'a Link)>,
+        selected_collision: Option<(Uuid, usize)>,
+    ) {
+        let collision_renderer = self.renderer.collision_renderer_mut();
+        collision_renderer.clear();
+
+        for (link_id, link) in links {
+            let link_world_transform = link.world_transform;
+
+            for (collision_index, collision) in link.collisions.iter().enumerate() {
+                let collision_origin = collision.origin.to_mat4();
+                let world_transform = link_world_transform * collision_origin;
+
+                // Determine color based on selection state
+                let is_selected = selected_collision.is_some_and(|(sel_link, sel_idx)| {
+                    sel_link == *link_id && sel_idx == collision_index
+                });
+                let color = if is_selected {
+                    collision_constants::SELECTED_COLOR
+                } else {
+                    collision_constants::DEFAULT_COLOR
+                };
+
+                // Add collision to renderer based on geometry type
+                match &collision.geometry {
+                    GeometryType::Box { size } => {
+                        collision_renderer.add_box(world_transform, *size, color);
+                    }
+                    GeometryType::Sphere { radius } => {
+                        collision_renderer.add_sphere(world_transform, *radius, color);
+                    }
+                    GeometryType::Cylinder { radius, length } => {
+                        collision_renderer.add_cylinder(world_transform, *radius, *length, color);
+                    }
+                    GeometryType::Capsule { radius, length } => {
+                        collision_renderer.add_capsule(world_transform, *radius, *length, color);
+                    }
+                    GeometryType::Mesh { .. } => {
+                        // Mesh collisions are not rendered as primitives
+                        // They would use the actual mesh geometry if needed
+                    }
+                }
+            }
+        }
+
+        collision_renderer.upload(&self.queue);
     }
 
     /// Show gizmo for a part

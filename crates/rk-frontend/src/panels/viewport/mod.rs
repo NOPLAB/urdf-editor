@@ -226,6 +226,13 @@ impl Panel for ViewportPanel {
                 }
             }
 
+            // Update collision instances
+            {
+                let app = app_state.lock();
+                let selected_collision = app.selected_collision;
+                vp_state.update_collisions(app.project.assembly.links.iter(), selected_collision);
+            }
+
             vp_state.render();
             tex_id
         };

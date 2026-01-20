@@ -60,24 +60,11 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-apple-darwin,aarch64-apple-darwin
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Build x86_64
-        run: cargo build --release --package rk-frontend --target x86_64-apple-darwin --features rk-cad/opencascade
-
-      - name: Build aarch64
-        run: cargo build --release --package rk-frontend --target aarch64-apple-darwin --features rk-cad/opencascade
-
-      - name: Create universal binary
-        run: |
-          mkdir -p target/release
-          lipo -create \
-            target/x86_64-apple-darwin/release/rk \
-            target/aarch64-apple-darwin/release/rk \
-            -output target/release/rk
+      - name: Build release
+        run: cargo build --release --package rk-frontend --features rk-cad/opencascade
 
       - name: Install cargo-packager
         run: cargo install cargo-packager --locked
@@ -116,6 +103,7 @@ jobs:
             libocct-modeling-data-dev \
             libocct-ocaf-dev \
             libocct-visualization-dev \
+            libocct-draw-dev \
             occt-misc
           echo "DEP_OCCT_ROOT=/usr" >> $GITHUB_ENV
           echo "OpenCASCADE_DIR=/usr/lib/cmake/opencascade" >> $GITHUB_ENV
@@ -163,8 +151,8 @@ jobs:
           # Windows
           cp artifacts/windows-installer/*.exe "release/rk-${VERSION}-windows-x64-setup.exe" 2>/dev/null || true
 
-          # macOS
-          cp artifacts/macos-installer/*.dmg "release/rk-${VERSION}-macos-universal.dmg" 2>/dev/null || true
+          # macOS (arm64 only)
+          cp artifacts/macos-installer/*.dmg "release/rk-${VERSION}-macos-arm64.dmg" 2>/dev/null || true
 
           # Linux
           cp artifacts/linux-installers/*.deb "release/rk_${VERSION}_amd64.deb" 2>/dev/null || true

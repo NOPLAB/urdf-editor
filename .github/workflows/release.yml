@@ -13,17 +13,8 @@ jobs:
   build-windows:
     name: Build Windows
     runs-on: windows-latest
-    env:
-      VCPKG_DEFAULT_TRIPLET: x64-windows
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install OpenCASCADE via vcpkg
-        run: |
-          vcpkg install opencascade
-          $OCCT_ROOT = "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows"
-          echo "DEP_OCCT_ROOT=$OCCT_ROOT" >> $env:GITHUB_ENV
-          echo "OpenCASCADE_DIR=$OCCT_ROOT\share\opencascade" >> $env:GITHUB_ENV
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -31,7 +22,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Build release
-        run: cargo build --release --package rk-frontend --features rk-cad/opencascade
+        run: cargo build --release --package rk-frontend --features rk-cad/opencascade-builtin
 
       - name: Install cargo-packager
         run: cargo install cargo-packager --locked
@@ -51,12 +42,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install OpenCASCADE
-        run: |
-          brew install opencascade cmake
-          OCCT_PREFIX=$(brew --prefix opencascade)
-          echo "DEP_OCCT_ROOT=$OCCT_PREFIX" >> $GITHUB_ENV
-          echo "OpenCASCADE_DIR=$OCCT_PREFIX/lib/cmake/opencascade" >> $GITHUB_ENV
+      - name: Install build dependencies
+        run: brew install cmake
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -64,7 +51,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Build release
-        run: cargo build --release --package rk-frontend --features rk-cad/opencascade
+        run: cargo build --release --package rk-frontend --features rk-cad/opencascade-builtin
 
       - name: Install cargo-packager
         run: cargo install cargo-packager --locked
@@ -80,7 +67,7 @@ jobs:
 
   build-linux:
     name: Build Linux
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -96,17 +83,7 @@ jobs:
             libgtk-3-dev \
             libfuse2 \
             cmake \
-            clang \
-            libocct-data-exchange-dev \
-            libocct-foundation-dev \
-            libocct-modeling-algorithms-dev \
-            libocct-modeling-data-dev \
-            libocct-ocaf-dev \
-            libocct-visualization-dev \
-            libocct-draw-dev \
-            occt-misc
-          echo "DEP_OCCT_ROOT=/usr" >> $GITHUB_ENV
-          echo "OpenCASCADE_DIR=/usr/lib/cmake/opencascade" >> $GITHUB_ENV
+            clang
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -114,7 +91,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Build release
-        run: cargo build --release --package rk-frontend --features rk-cad/opencascade
+        run: cargo build --release --package rk-frontend --features rk-cad/opencascade-builtin
 
       - name: Install cargo-packager
         run: cargo install cargo-packager --locked

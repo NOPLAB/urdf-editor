@@ -92,6 +92,10 @@ pub enum AppAction {
         limits: Option<JointLimits>,
     },
 
+    // Joint editing actions
+    /// Set the joint being edited (for gizmo display)
+    SetEditingJoint(Option<Uuid>),
+
     // Collision actions
     /// Select a collision element (link_id, collision_index)
     SelectCollision(Option<(Uuid, usize)>),
@@ -138,6 +142,8 @@ pub struct AppState {
     pub selected_part: Option<Uuid>,
     /// Currently selected collision element (link_id, collision_index)
     pub selected_collision: Option<(Uuid, usize)>,
+    /// Currently editing joint (for gizmo display)
+    pub editing_joint_id: Option<Uuid>,
     /// Hovered part
     pub hovered_part: Option<Uuid>,
     /// Current editor tool
@@ -167,6 +173,7 @@ impl Default for AppState {
             cad: CadState::default(),
             selected_part: None,
             selected_collision: None,
+            editing_joint_id: None,
             hovered_part: None,
             current_tool: EditorTool::default(),
             symmetry_mode: false,
@@ -247,6 +254,8 @@ impl AppState {
     /// Select a part
     pub fn select_part(&mut self, id: Option<Uuid>) {
         self.selected_part = id;
+        // Clear joint editing when selecting a part
+        self.editing_joint_id = None;
     }
 
     /// Queue an action
@@ -265,6 +274,7 @@ impl AppState {
         self.cad = CadState::default();
         self.selected_part = None;
         self.selected_collision = None;
+        self.editing_joint_id = None;
         self.project_path = None;
         self.modified = false;
     }
@@ -276,6 +286,7 @@ impl AppState {
         self.project_path = Some(path);
         self.selected_part = None;
         self.selected_collision = None;
+        self.editing_joint_id = None;
         self.modified = false;
     }
 }

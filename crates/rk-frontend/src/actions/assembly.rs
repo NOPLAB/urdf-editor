@@ -19,6 +19,7 @@ pub fn handle_assembly_action(action: AppAction, ctx: &ActionContext) {
         }
         AppAction::ResetJointPosition { joint_id } => handle_reset_joint_position(joint_id, ctx),
         AppAction::ResetAllJointPositions => handle_reset_all_joint_positions(ctx),
+        AppAction::SetEditingJoint(joint_id) => handle_set_editing_joint(joint_id, ctx),
         AppAction::SelectCollision(selection) => handle_select_collision(selection, ctx),
         AppAction::AddCollision { link_id, geometry } => {
             handle_add_collision(link_id, geometry, ctx)
@@ -231,6 +232,12 @@ fn handle_reset_all_joint_positions(ctx: &ActionContext) {
 
     // Update renderer transforms
     sync_renderer_transforms(&state, ctx);
+}
+
+fn handle_set_editing_joint(joint_id: Option<Uuid>, ctx: &ActionContext) {
+    let mut state = ctx.app_state.lock();
+    state.editing_joint_id = joint_id;
+    tracing::debug!("Set editing joint: {:?}", joint_id);
 }
 
 /// Sync renderer transforms with assembly world transforms

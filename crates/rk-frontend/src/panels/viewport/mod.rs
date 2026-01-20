@@ -380,8 +380,60 @@ impl Panel for ViewportPanel {
             }
         }
 
-        // Apply gizmo transform to collision element
+        // Apply gizmo transform to joint element (highest priority)
         if let Some(transform) = gizmo_delta
+            && let Some(joint_id) = vp_state.gizmo.editing_joint
+        {
+            let link_world_transform = vp_state.gizmo.link_world_transform;
+            drop(vp_state);
+
+            // Calculate the delta in parent link-local space
+            let link_world_inv = link_world_transform.inverse();
+
+            let mut app = app_state.lock();
+
+            match transform {
+                GizmoTransform::Translation(delta) => {
+                    // Transform world delta to parent link-local delta
+                    let local_delta = link_world_inv.transform_vector3(delta);
+
+                    if let Some(joint) = app.project.assembly.get_joint_mut(joint_id) {
+                        joint.origin.xyz[0] += local_delta.x;
+                        joint.origin.xyz[1] += local_delta.y;
+                        joint.origin.xyz[2] += local_delta.z;
+                    }
+                }
+                GizmoTransform::Rotation(rotation) => {
+                    // For rotation, we need to update the RPY angles
+                    if let Some(joint) = app.project.assembly.get_joint_mut(joint_id) {
+                        // Current rotation as quaternion
+                        let current_quat = joint.origin.to_quat();
+                        // Apply the rotation delta
+                        let new_quat = rotation * current_quat;
+                        // Convert back to euler angles (XYZ order)
+                        let (x, y, z) = new_quat.to_euler(glam::EulerRot::XYZ);
+                        joint.origin.rpy = [x, y, z];
+                    }
+                }
+                GizmoTransform::Scale(_) => {
+                    // Joint origins don't support scaling - ignore
+                }
+            }
+
+            app.modified = true;
+
+            // Update world transforms after joint origin change
+            app.project
+                .assembly
+                .update_world_transforms_with_current_positions();
+
+            drop(app);
+
+            // Re-lock viewport state for rest of handling
+            vp_state = viewport_state.lock();
+        }
+        // Apply gizmo transform to collision element
+        else if let Some(transform) = gizmo_delta
             && let Some((link_id, collision_index)) = vp_state.gizmo.editing_collision
         {
             let link_world_transform = vp_state.gizmo.link_world_transform;

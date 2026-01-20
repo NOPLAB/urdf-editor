@@ -113,7 +113,8 @@ pub fn dispatch_action(action: AppAction, ctx: &ActionContext) {
         | AppAction::UpdateJointType { .. }
         | AppAction::UpdateJointOrigin { .. }
         | AppAction::UpdateJointAxis { .. }
-        | AppAction::UpdateJointLimits { .. } => {
+        | AppAction::UpdateJointLimits { .. }
+        | AppAction::SetEditingJoint(_) => {
             handle_assembly_action(action, ctx);
         }
 

@@ -174,6 +174,7 @@ impl ViewportState {
         // Clear gizmo state to prevent stale hit testing
         self.gizmo.part_id = None;
         self.gizmo.editing_collision = None;
+        self.gizmo.editing_joint = None;
     }
 
     /// Show gizmo for a part
@@ -210,6 +211,7 @@ impl ViewportState {
         self.renderer.hide_gizmo();
         self.gizmo.part_id = None;
         self.gizmo.editing_collision = None;
+        self.gizmo.editing_joint = None;
     }
 
     /// Show gizmo for a collision element
@@ -254,6 +256,47 @@ impl ViewportState {
         self.gizmo.editing_collision.is_some()
     }
 
+    /// Show gizmo for a joint element
+    ///
+    /// # Arguments
+    /// * `joint_id` - The joint being edited
+    /// * `parent_link_world_transform` - World transform of the parent link
+    /// * `joint_origin` - Local transform of the joint (from Pose)
+    pub fn show_gizmo_for_joint(
+        &mut self,
+        joint_id: uuid::Uuid,
+        parent_link_world_transform: Mat4,
+        joint_origin: Mat4,
+    ) {
+        // Compute joint world transform
+        let world_transform = parent_link_world_transform * joint_origin;
+
+        // Extract position from world transform
+        let (_, rotation, translation) = world_transform.to_scale_rotation_translation();
+
+        // Use fixed scale - shader handles distance-based scaling
+        let scale = 1.0;
+
+        // Store gizmo state
+        self.gizmo.gizmo_position = translation;
+        self.gizmo.gizmo_scale = scale;
+        self.gizmo.part_id = None;
+        self.gizmo.editing_collision = None;
+        self.gizmo.editing_joint = Some(joint_id);
+        self.gizmo.link_world_transform = parent_link_world_transform;
+        self.gizmo.part_start_transform = joint_origin;
+
+        // Set object rotation for local coordinate space
+        self.renderer
+            .set_gizmo_object_rotation(&self.queue, rotation);
+        self.renderer.show_gizmo(&self.queue, translation, scale);
+    }
+
+    /// Check if currently editing a joint element
+    pub fn is_editing_joint(&self) -> bool {
+        self.gizmo.editing_joint.is_some()
+    }
+
     /// Test if a screen position hits the gizmo
     pub fn gizmo_hit_test(
         &self,
@@ -262,7 +305,10 @@ impl ViewportState {
         width: f32,
         height: f32,
     ) -> GizmoAxis {
-        if self.gizmo.part_id.is_none() && self.gizmo.editing_collision.is_none() {
+        if self.gizmo.part_id.is_none()
+            && self.gizmo.editing_collision.is_none()
+            && self.gizmo.editing_joint.is_none()
+        {
             return GizmoAxis::None;
         }
 

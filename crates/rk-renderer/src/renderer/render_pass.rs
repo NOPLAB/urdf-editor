@@ -22,10 +22,7 @@ pub struct ShadowPassParams<'a> {
 }
 
 /// Execute the shadow pass.
-pub fn render_shadow_pass(
-    encoder: &mut wgpu::CommandEncoder,
-    params: &ShadowPassParams<'_>,
-) {
+pub fn render_shadow_pass(encoder: &mut wgpu::CommandEncoder, params: &ShadowPassParams<'_>) {
     if !params.lighting.shadows_enabled() {
         return;
     }

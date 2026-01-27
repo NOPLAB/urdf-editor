@@ -434,6 +434,19 @@ impl Panel for ViewportPanel {
                 .assembly
                 .update_world_transforms_with_current_positions();
 
+            // Sync renderer transforms with updated world transforms
+            {
+                let mut vp = viewport_state.lock();
+                for link in app.project.assembly.links.values() {
+                    if let Some(part_id) = link.part_id
+                        && let Some(part) = app.project.get_part(part_id)
+                    {
+                        let result = link.world_transform * part.origin_transform;
+                        vp.update_part_transform(part_id, result);
+                    }
+                }
+            }
+
             drop(app);
 
             // Re-lock viewport state for rest of handling

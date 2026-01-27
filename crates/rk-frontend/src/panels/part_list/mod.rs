@@ -23,6 +23,8 @@ pub struct PartListPanel {
     editing_project_name: bool,
     /// Temporary buffer for editing project name
     project_name_buffer: String,
+    /// Collapsed nodes (folded tree items)
+    collapsed: HashSet<Uuid>,
 }
 
 impl PartListPanel {
@@ -32,6 +34,7 @@ impl PartListPanel {
             drop_target: None,
             editing_project_name: false,
             project_name_buffer: String::new(),
+            collapsed: HashSet::new(),
         }
     }
 
@@ -123,21 +126,39 @@ impl PartListPanel {
         let has_children = children.is_some_and(|c| !c.is_empty());
         let has_parent = parts_with_parent.contains(&part_id);
         let is_selected = selected_id == Some(part_id);
+        let is_collapsed = self.collapsed.contains(&part_id);
 
         ui.push_id(part_id, |ui| {
             let indent = depth as f32 * 16.0;
 
-            // Tree icon
-            let icon = if has_children { "▼" } else { "●" };
-            let label_text = format!("{} {}", icon, name);
-
             ui.horizontal(|ui| {
                 ui.add_space(indent);
-                self.render_part_item(ui, part_id, &label_text, is_selected, has_parent, actions);
+
+                // Unity-style arrow toggle (only for items with children)
+                if has_children {
+                    let arrow = if is_collapsed { "▶" } else { "▼" };
+                    let arrow_response = ui.add(
+                        egui::Label::new(egui::RichText::new(arrow).weak())
+                            .selectable(false)
+                            .sense(egui::Sense::click()),
+                    );
+                    if arrow_response.clicked() {
+                        if is_collapsed {
+                            self.collapsed.remove(&part_id);
+                        } else {
+                            self.collapsed.insert(part_id);
+                        }
+                    }
+                } else {
+                    // Reserve space for alignment
+                    ui.add_space(ui.spacing().icon_width);
+                }
+
+                self.render_part_item(ui, part_id, name, is_selected, has_parent, actions);
             });
 
-            // Render children
-            if let Some(children) = children {
+            // Render children (only if not collapsed)
+            if !is_collapsed && let Some(children) = children {
                 for child_id in children {
                     self.render_part_tree(
                         ui,

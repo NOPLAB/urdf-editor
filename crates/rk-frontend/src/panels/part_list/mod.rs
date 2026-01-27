@@ -154,26 +154,6 @@ impl PartListPanel {
         });
     }
 
-    /// Render an orphaned (unconnected) part
-    fn render_orphan_part(
-        &mut self,
-        ui: &mut egui::Ui,
-        part_id: Uuid,
-        name: &str,
-        selected_id: Option<Uuid>,
-        actions: &mut Vec<TreeAction>,
-    ) {
-        let is_selected = selected_id == Some(part_id);
-        let label_text = format!("○ {}", name);
-
-        ui.push_id(part_id, |ui| {
-            ui.horizontal(|ui| {
-                ui.add_space(16.0); // Indent under project root
-                self.render_part_item(ui, part_id, &label_text, is_selected, false, actions);
-            });
-        });
-    }
-
     /// Render the project root node
     fn render_project_root(
         &mut self,
@@ -261,8 +241,7 @@ impl Panel for PartListPanel {
         let project_name = state.project.name.clone();
 
         // Build tree structure from Assembly
-        let (root_parts, children_map, parts_with_parent, unconnected_parts) =
-            build_tree_structure(&state);
+        let (root_parts, children_map, parts_with_parent) = build_tree_structure(&state);
 
         // Collect part names for display
         let part_names: HashMap<Uuid, String> = state
@@ -299,21 +278,6 @@ impl Panel for PartListPanel {
                     1,
                     &mut actions,
                 );
-            }
-
-            // Render unconnected parts (parts not in assembly at all)
-            if !unconnected_parts.is_empty() {
-                ui.add_space(8.0);
-                ui.horizontal(|ui| {
-                    ui.add_space(16.0);
-                    ui.label(egui::RichText::new("Unconnected").weak().italics());
-                });
-
-                for part_id in &unconnected_parts {
-                    if let Some(name) = part_names.get(part_id) {
-                        self.render_orphan_part(ui, *part_id, name, selected_id, &mut actions);
-                    }
-                }
             }
 
             // Empty space area for context menu (right-click on empty space)

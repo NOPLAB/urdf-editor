@@ -1,6 +1,7 @@
 //! Camera settings overlay for the 3D viewport
 
 use crate::state::SharedViewportState;
+use crate::theme::palette;
 
 /// Render camera settings overlay in the top-right corner (Unity-style)
 pub fn render_camera_settings(
@@ -25,9 +26,9 @@ pub fn render_camera_settings(
             .order(egui::Order::Foreground)
             .show(ui.ctx(), |ui| {
                 egui::Frame::popup(ui.style())
-                    .fill(egui::Color32::from_rgba_unmultiplied(30, 30, 30, 220))
+                    .fill(palette::overlay_bg(220))
                     .corner_radius(4.0)
-                    .stroke(egui::Stroke::new(1.0, egui::Color32::from_gray(60)))
+                    .stroke(egui::Stroke::new(1.0, palette::BORDER_NORMAL))
                     .inner_margin(2.0)
                     .show(ui, |ui| {
                         // Expand button (left arrow - to expand from right)
@@ -36,11 +37,7 @@ pub fn render_camera_settings(
                             ui.allocate_painter(button_size, egui::Sense::click());
 
                         if response.hovered() {
-                            painter.rect_filled(
-                                response.rect,
-                                2.0,
-                                egui::Color32::from_rgba_unmultiplied(60, 60, 60, 200),
-                            );
+                            painter.rect_filled(response.rect, 2.0, palette::BG_HOVER);
                         }
 
                         let center = response.rect.center();
@@ -53,9 +50,9 @@ pub fn render_camera_settings(
                         let bottom = egui::pos2(center.x + arrow_width, center.y + arrow_height);
 
                         let arrow_color = if response.hovered() {
-                            egui::Color32::from_gray(200)
+                            palette::TEXT_PRIMARY
                         } else {
-                            egui::Color32::from_gray(100)
+                            palette::TEXT_SECONDARY
                         };
 
                         painter.line_segment([top, tip], egui::Stroke::new(1.0, arrow_color));
@@ -85,9 +82,9 @@ pub fn render_camera_settings(
         .order(egui::Order::Foreground)
         .show(ui.ctx(), |ui| {
             egui::Frame::popup(ui.style())
-                .fill(egui::Color32::from_rgba_unmultiplied(30, 30, 30, 220))
+                .fill(palette::overlay_bg(220))
                 .corner_radius(4.0)
-                .stroke(egui::Stroke::new(1.0, egui::Color32::from_gray(60)))
+                .stroke(egui::Stroke::new(1.0, palette::BORDER_NORMAL))
                 .inner_margin(2.0)
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
@@ -100,11 +97,7 @@ pub fn render_camera_settings(
 
                         // Button background on hover
                         if response.hovered() {
-                            painter.rect_filled(
-                                response.rect,
-                                2.0,
-                                egui::Color32::from_rgba_unmultiplied(60, 60, 60, 200),
-                            );
+                            painter.rect_filled(response.rect, 2.0, palette::BG_HOVER);
                         }
 
                         // Draw arrow
@@ -118,9 +111,9 @@ pub fn render_camera_settings(
                         let bottom = egui::pos2(center.x - arrow_width, center.y + arrow_height);
 
                         let arrow_color = if response.hovered() {
-                            egui::Color32::from_gray(200)
+                            palette::TEXT_PRIMARY
                         } else {
-                            egui::Color32::from_gray(100)
+                            palette::TEXT_SECONDARY
                         };
 
                         // Draw thin arrow (just lines)
@@ -164,9 +157,9 @@ pub fn render_camera_settings(
         .order(egui::Order::Foreground)
         .show(ui.ctx(), |ui| {
             egui::Frame::popup(ui.style())
-                .fill(egui::Color32::from_rgba_unmultiplied(30, 30, 30, 220))
+                .fill(palette::overlay_bg(220))
                 .corner_radius(4.0)
-                .stroke(egui::Stroke::new(1.0, egui::Color32::from_gray(60)))
+                .stroke(egui::Stroke::new(1.0, palette::BORDER_NORMAL))
                 .inner_margin(8.0)
                 .show(ui, |ui| {
                     ui.set_width(panel_width - 16.0);

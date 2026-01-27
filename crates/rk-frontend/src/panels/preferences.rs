@@ -466,6 +466,7 @@ impl PreferencesPanel {
         let mut cfg = config.write();
         let ui_cfg = cfg.config_mut().ui.clone();
         let mut changed = false;
+        let mut theme_changed = false;
 
         let mut theme = ui_cfg.theme;
         let mut font_size = ui_cfg.font_size;
@@ -483,12 +484,14 @@ impl PreferencesPanel {
                         .changed()
                     {
                         changed = true;
+                        theme_changed = true;
                     }
                     if ui
                         .selectable_value(&mut theme, UiTheme::Light, "Light")
                         .changed()
                     {
                         changed = true;
+                        theme_changed = true;
                     }
                 });
         });
@@ -501,6 +504,10 @@ impl PreferencesPanel {
             cfg.config_mut().ui = UiConfig { theme, font_size };
         }
 
-        ui.label("(Theme and font changes require restart)");
+        // Apply theme immediately (hot reload)
+        if theme_changed {
+            drop(cfg);
+            crate::theme::apply_theme(ui.ctx(), config);
+        }
     }
 }

@@ -8,6 +8,7 @@ use uuid::Uuid;
 
 use crate::panels::Panel;
 use crate::state::{AppAction, SharedAppState};
+use crate::theme::palette;
 
 use toolbar::{render_unit_selector, show_tree_context_menu};
 use tree::{TreeAction, build_tree_structure, can_connect};
@@ -53,7 +54,7 @@ impl PartListPanel {
         } else if is_drop_target {
             egui::RichText::new(label_text)
                 .strong()
-                .color(egui::Color32::GREEN)
+                .color(palette::SUCCESS)
         } else {
             egui::RichText::new(label_text)
         };
@@ -330,7 +331,7 @@ impl Panel for PartListPanel {
                     ui.painter().rect_stroke(
                         rect,
                         2.0,
-                        egui::Stroke::new(1.0, egui::Color32::GRAY),
+                        egui::Stroke::new(1.0, palette::BORDER_NORMAL),
                         egui::StrokeKind::Outside,
                     );
                 }

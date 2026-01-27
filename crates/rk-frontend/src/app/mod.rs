@@ -57,6 +57,9 @@ impl UrdfEditorApp {
         // Load configuration
         let config = create_shared_config();
 
+        // Apply theme from config
+        crate::theme::apply_theme(&cc.egui_ctx, &config);
+
         // Create viewport state if WGPU is available
         let viewport_state = cc.wgpu_render_state.as_ref().map(|render_state| {
             let device = Arc::new(render_state.device.clone());
@@ -140,7 +143,7 @@ impl UrdfEditorApp {
                     ui.spacing_mut().item_spacing.x = 8.0;
 
                     ui.colored_label(
-                        egui::Color32::from_rgb(100, 200, 100),
+                        crate::theme::palette::SUCCESS,
                         format!(
                             "New version {} available! (current: {})",
                             latest_version,

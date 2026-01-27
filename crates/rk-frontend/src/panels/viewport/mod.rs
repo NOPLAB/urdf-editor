@@ -14,6 +14,7 @@ use crate::state::{
     AppAction, GizmoTransform, PickablePartData, ReferencePlane, SharedAppState,
     SharedViewportState, SketchAction, pick_object,
 };
+use crate::theme::palette;
 
 use overlays::{
     render_axes_indicator, render_camera_settings, render_dimension_dialog, render_extrude_dialog,
@@ -77,13 +78,13 @@ impl Panel for ViewportPanel {
         let (response, painter) =
             ui.allocate_painter(available_size, egui::Sense::click_and_drag());
 
-        painter.rect_filled(response.rect, 0.0, egui::Color32::from_rgb(30, 30, 30));
+        painter.rect_filled(response.rect, 0.0, palette::BG_BASE);
         painter.text(
             response.rect.center(),
             egui::Align2::CENTER_CENTER,
             "3D Viewport\n(WebGPU not available)",
             egui::FontId::proportional(16.0),
-            egui::Color32::GRAY,
+            palette::TEXT_SECONDARY,
         );
 
         self.last_size = available_size;
